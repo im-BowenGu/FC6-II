@@ -1,3 +1,419 @@
+commit 599187030aa7d9388bac5d3205bb3fabb9ec9550
+Merge: 6bee62c13 cafdfee8d
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Mon Mar 24 13:06:31 2025 -0600
+
+    Merge branch 'master' into branch-1.9
+
+commit cafdfee8d60e5cda5a7bc4b9819e9153fc20dfdc
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Mar 24 11:17:27 2025 -0700
+
+    Version 1.9.20
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 08f0b7419e8e1ebf8a99fd9cd344f04f1c72c836
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Mar 24 11:17:05 2025 -0700
+
+    doc: Add doc updates for version 1.9.20
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 6276dc0c563263b65558c1983abae8d48d41a1ed
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sat Mar 22 15:24:01 2025 -0700
+
+    Add 30v pyro voltage range support
+    
+    TeleMega v7.0 uses new voltage dividers so that the pyro voltage can
+    range up to 30v. This means there are new telemetry and log formats.
+    
+    Split out easy timer, telemetrum and telemega voltage conversion funcs
+    and use the as appropriate.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 205d56ab72974e78ecc522e7ee1ce4fc93178822
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sat Mar 22 15:23:00 2025 -0700
+
+    Add TeleMega v7.0 firmware and specs
+    
+    Add firmware to fat target, altosui build.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit ed40181472f8dffec4b4b8b3ec866f70e2811a9b
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sat Mar 22 14:47:09 2025 -0700
+
+    altos: Add 30V pyro log/telem options for telemega v7.0
+    
+    We switched the pyro voltage dividers so that the max range increased
+    from 15V to 30V. This means new log and telem formats.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit d2379ed7b9cb40937746e2ba1f3fd2146636fffa
+Merge: 8cdbba302 1f594a0a9
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Fri Mar 21 17:15:50 2025 -0600
+
+    Merge branch 'master' of ssh://git.gag.com/scm/git/fw/altos
+
+commit 8cdbba3022997302c2cf84b6c098379a0a7c9d41
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Fri Mar 21 17:15:01 2025 -0600
+
+    add production test support for TeleGPS v4.0
+
+commit 7885ce7c5b16f6170639a6f682e5a3c3fc57b1d6
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Fri Mar 21 16:58:14 2025 -0600
+
+    add production support for TeleMega v7.0
+
+commit af68bd20b52e12c8a0694f32c770e317f2a4d007
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Fri Mar 21 16:54:35 2025 -0600
+
+    add TeleMega v7 to firmware copied in Releasing
+
+commit 1f594a0a9486e60c39a1b2cba677252c7da0e563
+Author: Keith Packard <keithp@keithp.com>
+Date:   Fri Mar 21 15:40:05 2025 -0700
+
+    telemega-v7.0-seeed: Set ublox version
+    
+    Ships with v10 part
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 2fa4675de2a9edc03a6bb5e325ad77f3468334cf
+Author: Keith Packard <keithp@keithp.com>
+Date:   Fri Mar 21 15:37:44 2025 -0700
+
+    telemega-v7.0: Set ublox version to 10
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 18f1b63563b621708c0c7cb5db57e370a11541d7
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sun Mar 9 11:10:05 2025 -0700
+
+    doc: Add micropeak outline doc
+    
+    Provide geometry for mounting micropeak.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 7f48e8c536173c90443e14276692b16b8fb70cff
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Mon Mar 3 19:03:49 2025 -0700
+
+    altosui: handle another jfreechart 1.5.5 api change
+
+commit 733e0269e3a33a6795e1b98d0e15a0a239610252
+Author: Keith Packard <keithp@keithp.com>
+Date:   Tue Feb 25 15:12:40 2025 -0800
+
+    altosuilib: Adapt to jfreechart 1.5.5 update
+    
+    Incompatible changes require source updates.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit e8d1f016f16931166a126ae8638d6a6d1a0eb02b
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Tue Feb 25 13:12:35 2025 -0700
+
+    altos: move Java minimum supported version from 7 to 8
+
+commit 01930120dfb37a6aeaf1b3800aad62f56a4e67b9
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Feb 24 19:47:11 2025 -0800
+
+    altos: ignore the first few battery values in telebt-v4.0-seeed
+    
+    The ADC appears to get at least the first value wrong, so discard some
+    before we check the battery voltage.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 0e53052a78f127548c1120df691094f6bda91467
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Feb 24 13:24:05 2025 -0800
+
+    altos: Add Makefiles for telebt v4.0 seeed test code
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 784ee15f0fc1cfa3614c5e049eba4406f342a2b4
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Feb 24 13:10:27 2025 -0800
+
+    Add telebt v4.0 seeed test code
+    
+    Test radio, BT module and battery voltage.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 8a021c9280ec88cf27302ca9ce09daed0b0ca3e7
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Feb 24 13:09:51 2025 -0800
+
+    altos: Allow telebt test code to redefine how BT panics are handled
+    
+    Want to provide a consistent UX for seeed QA
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 13ca1bb20a199447f6e478871f459498d2928bc2
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sun Feb 16 14:03:30 2025 -0800
+
+    altos: Use smaller crt0 for stm boot loader
+    
+    This eliminates some of unnecessary startup code and saves a bit of
+    flash.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 1d4edd6e7aef573468b40f0ec34e4cae20661652
+Author: Keith Packard <keithp@keithp.com>
+Date:   Tue Jan 28 22:57:39 2025 -0800
+
+    altos/telemega-v7.0-seeed: Report success with just the green LED
+    
+    Don't turn them both on.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 312711e685c1912f0753fad30a075a35f1726042
+Author: Keith Packard <keithp@keithp.com>
+Date:   Tue Jan 28 11:37:40 2025 -0800
+
+    altos: Add telemega test for seeed
+    
+    This runs the existing POST as well as validating flash size, battery
+    voltage, GPS receiver, accel range and baro range.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit d1e210747fe2582a8c2e63be126411e4ccf0e623
+Author: Keith Packard <keithp@keithp.com>
+Date:   Tue Jan 28 10:43:42 2025 -0800
+
+    altos/micropeak: Ignore another GCC warning
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit a7ec22401949eb4af120c302b9abdbc869c4343b
+Author: Keith Packard <keithp@keithp.com>
+Date:   Tue Jan 28 10:27:38 2025 -0800
+
+    altos: Add TeleMega v7.0 firmware and flash loader
+    
+    TeleMega v7.0 is nearly identical to 6.0. The only change
+    is to support pyro batteries up to 30V. This was done by
+    changing the ADC voltage dividers from 100k/27k to 100k/12k.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit d35c1488cd2674749d60c9863aba244d98181abd
+Author: Keith Packard <keithp@keithp.com>
+Date:   Thu Jan 23 09:29:15 2025 -0800
+
+    telegps-v4.0-seeed: Test CC1200 using ao_radio_post
+    
+    Make sure the radio chip is alive enough to respond to SPI.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit adb1df0ae200d4aa37fed5a80d5be8cab305b1b3
+Author: Keith Packard <keithp@keithp.com>
+Date:   Thu Jan 23 09:21:26 2025 -0800
+
+    altos: Add ao_radio_post (power-on self-test) for cc1200
+    
+    This function checks to make sure the radio chip is present on the SPI
+    bus.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 042c372a736ace40a473e8c165fea750c0681b7e
+Author: Keith Packard <keithp@keithp.com>
+Date:   Thu Oct 3 21:45:11 2024 -0700
+
+    telegps-v4.0-seeed: Use simpler failure indicators
+    
+    panic with one blink - flash check failed
+    panic with two blinks - battery voltage check failed
+    panic with three blinks - gps check failed
+    steady LED - success
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 488fc371b57c26ae77e0b70dbaaccac627c47db6
+Author: Keith Packard <keithp@keithp.com>
+Date:   Tue Oct 1 21:52:56 2024 -0700
+
+    altos: Add telegps v4.0 test firmware
+    
+    This is custom firmware for testing TeleGPS v4.0 boards at Seeed. It
+    checks to make sure flash, ADC and GPS are working correctly. On
+    success, it will hold the green LED steady. On failure, it will blink
+    out a pattern identifying the failing component.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit f188e2d5b52374fb8ba9bc024659eee3371d695a
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Fri Dec 20 14:57:42 2024 -0700
+
+    include TeleLCO v3.0 firmware in Releasing file
+
+commit c593698fe485ca673e65dfb3672b25927b0fec14
+Author: Keith Packard <keithp@keithp.com>
+Date:   Wed Nov 27 10:43:27 2024 -0800
+
+    Add built versions of altosdroid
+    
+    Make sure we can recover from Android SDK failures.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 9694440cd501a9b170fec7c85fe57f1e4fe749b3
+Author: Keith Packard <keithp@keithp.com>
+Date:   Thu Sep 26 08:23:48 2024 -0700
+
+    src: Add more includes to ao.h
+    
+    This makes sure altos has all of the C library definitions it needs
+    rather than on relying on the C library to expose more than POSIX
+    says it should.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 3d05063c4dd83d2bc29879a82d9159e7395e0743
+Author: Keith Packard <keithp@keithp.com>
+Date:   Thu Aug 22 10:57:36 2024 -0700
+
+    doc: Clean up some asciidoctor complaints
+    
+    Upgrade output to pdf version 1.6. Fill in short table rows.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit a4701d45dad5e464db0856e39186f0b0d6899e90
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Aug 5 22:15:13 2024 -0700
+
+    altosdroid: Remove spurious /> in an xml file
+    
+    oops
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit ce0fc146ab443908661aeaee2e73df975af6304b
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Aug 5 22:14:42 2024 -0700
+
+    altosdroid: Reduce lint in java code
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 79da9fc76fd167622c09333628f587e6a8cfabd0
+Merge: 96e594f24 33e82d7d2
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Mon Aug 26 13:28:31 2024 -0600
+
+    Merge branch 'master' of ssh://git.gag.com/scm/git/fw/altos
+
+commit 96e594f24fdcc5f1b84c29f9deb68dbb5b8b381d
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Mon Aug 26 13:28:11 2024 -0600
+
+    add production flash/cal/test script for TeleLCO v3.0
+
+commit 33e82d7d2ec428f942d306df64d062223c7a1a64
+Author: Keith Packard <keithp@keithp.com>
+Date:   Thu Aug 22 10:41:44 2024 -0700
+
+    mpusb-3.0: Add cast to putchar call. Make compiler happy.
+    
+    We've added warnings about casts to catch mistakes; this one wasn't a
+    mistake.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 8275ed5907d9aeb00a326e54757fe314eefd1dce
+Author: Keith Packard <keithp@keithp.com>
+Date:   Wed Aug 14 08:46:07 2024 -0700
+
+    altoslib: Add TeleGPS v4 bits
+    
+    Need to adjust the ADC stuff for battery level conversions.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 87c65469e3c5c991d6ad67fba9a77cb596d4bcac
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Wed Aug 14 01:15:36 2024 -0600
+
+    add support for TeleGPS v4.0
+
+commit efc0d54358349fdbebdc1d80800e865eea7a50e8
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sun Aug 11 15:43:01 2024 -0700
+
+    map-server: Make sample map tile fetch script use valid zoom
+    
+    Need to use an in-range value or the server will just ignore it.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 3e300bb8f6ddd735236103527d8d78b9dc87e0fd
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sun Aug 11 15:40:49 2024 -0700
+
+    altoslib: Ignore content-length when fetching map tiles
+    
+    Apache has been "fixed" to no longer respect any content-length
+    provided by a CGI script. This means we don't get the length of the
+    image from the server anymore. Ignore it and just keep fetching until
+    we hit the end.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 0eb58dd49db80c413cdb2783fe75392484df17d3
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Aug 5 11:55:37 2024 -0700
+
+    doc: Add EasyMega v3 to doc/specs.inc
+    
+    New IMU setup, otherwise the same
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 9cf71755e6629525bd1bc0c704edb971faa36373
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Aug 5 11:54:52 2024 -0700
+
+    Add a note about specs.inc to Releasing
+    
+    Yet another release process step we missed
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 6bee62c1309c75c5789cc0e95a4f20f662f836eb
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Mon Aug 5 10:38:59 2024 -0600
+
+    update ChangeLog for <version> release
+
 commit 895665eefe846394926d70e4a5d51346841cb251
 Merge: 5d0a76157 36f3368a6
 Author: Bdale Garbee <bdale@gag.com>
