@@ -151,6 +151,15 @@
 	|40mW
 	|3.7V
 
+	|TeleMega v7.0
+	|MS5607 30km (100k')
+	|ADXL375 200g
+	|uBlox Max-10S
+	|BMI088 MMC5983
+	|8MB
+	|40mW
+	|3.7V
+
 	endif::telemega[]
 	ifdef::easymega[]
 	|EasyMega v1.0
@@ -167,6 +176,15 @@
 	|ADXL375 200g
 	|-
 	|MPU9250
+	|8MB
+	|-
+	|3.7V
+
+	|EasyMega v3.0
+	|MS5607 30km (100k')
+	|ADXL375 200g
+	|-
+	|BMI088 MMC5983A
 	|8MB
 	|-
 	|3.7V

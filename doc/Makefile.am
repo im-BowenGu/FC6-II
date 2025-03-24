@@ -17,6 +17,7 @@ FAKETIME=TZ=UTC faketime -f '$(RELEASE_DATE) 00:00:00 i0'
 endif
 
 RELNOTES_INC=\
+	release-notes-1.9.20.inc \
 	release-notes-1.9.19.inc \
 	release-notes-1.9.18.inc \
 	release-notes-1.9.17.inc \
@@ -237,6 +238,7 @@ EASYMINI_ADOC_FILES=$(EASYMINI_TXT_FILES:.txt=.adoc) $(EASYMINI_INC_FILES:.inc=.
 OUTLINE_TXT_FILES=\
 	easymega-outline.txt \
 	easymini-outline.txt \
+	micropeak-outline.txt \
 	telemega-outline.txt \
 	telemetrum-outline.txt \
 	telemini-v1-outline.txt \
@@ -253,6 +255,7 @@ SVG=\
 	telemetrum.svg \
 	telemini-v1.svg \
 	telemini-v3.svg \
+	micropeak.svg \
 	easymega.svg
 
 RELNOTES_HTML=$(RELNOTES_INC:.inc=.html)
@@ -325,7 +328,7 @@ ATTRIBUTES=--attribute="revdate=$(DOC_DATE)" --attribute="version=$(VERSION)"
 	asciidoctor $(ATTRIBUTES) -b html5 $*.adoc
 
 .adoc.pdf:
-	asciidoctor-pdf $(ATTRIBUTES) -a optimize $*.adoc
+	asciidoctor-pdf $(ATTRIBUTES) --attribute="pdf-version=1.6" -a optimize $*.adoc
 
 all:	$(HTML) $(PDF)
 
@@ -346,6 +349,8 @@ easymini.pdf easymini.html: $(EASYMINI_ADOC_FILES) $(IMAGES)
 telemini-v1-outline.pdf: telemini-v1-outline.txt telemini-v1.svg
 
 telemini-v3-outline.pdf: telemini-v3-outline.txt telemini-v3.svg
+
+micropeak-outline.pdf: micropeak-outline.txt micropeak.svg
 
 install:	all
 

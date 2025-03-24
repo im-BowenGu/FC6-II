@@ -19,10 +19,11 @@
 #ifndef _AO_H_
 #define _AO_H_
 
-#include <stdint.h>
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 #include <stddef.h>
+#include <stdarg.h>
 #include <stdbool.h>
 #include <ao_pins.h>
 #include <ao_arch.h>
@@ -665,6 +666,9 @@ ao_radio_test_on(void);
 
 void
 ao_radio_test_off(void);
+
+bool
+ao_radio_post(void);
 
 void
 ao_radio_init(void);

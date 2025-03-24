@@ -140,7 +140,8 @@ FIRMWARE_TMEGA_3_0=$(top_srcdir)/src/telemega-v3.0/telemega-v3.0-$(VERSION).ihx
 FIRMWARE_TMEGA_4_0=$(top_srcdir)/src/telemega-v4.0/telemega-v4.0-$(VERSION).ihx
 FIRMWARE_TMEGA_5_0=$(top_srcdir)/src/telemega-v5.0/telemega-v5.0-$(VERSION).ihx
 FIRMWARE_TMEGA_6_0=$(top_srcdir)/src/telemega-v6.0/telemega-v6.0-$(VERSION).ihx
-FIRMWARE_TMEGA=$(FIRMWARE_TMEGA_1_0) $(FIRMWARE_TMEGA_2_0) $(FIRMWARE_TMEGA_3_0) $(FIRMWARE_TMEGA_4_0) $(FIRMWARE_TMEGA_5_0) $(FIRMWARE_TMEGA_6_0)
+FIRMWARE_TMEGA_7_0=$(top_srcdir)/src/telemega-v7.0/telemega-v7.0-$(VERSION).ihx
+FIRMWARE_TMEGA=$(FIRMWARE_TMEGA_1_0) $(FIRMWARE_TMEGA_2_0) $(FIRMWARE_TMEGA_3_0) $(FIRMWARE_TMEGA_4_0) $(FIRMWARE_TMEGA_5_0) $(FIRMWARE_TMEGA_6_0) $(FIRMWARE_TMEGA_7_0)
 
 FIRMWARE_EMINI_1_0=$(top_srcdir)/src/easymini-v1.0/easymini-v1.0-$(VERSION).ihx
 FIRMWARE_EMINI_2_0=$(top_srcdir)/src/easymini-v2.0/easymini-v2.0-$(VERSION).ihx
@@ -162,7 +163,8 @@ FIRMWARE_ETIMER=$(FIRMWARE_ETIMER_1) $(FIRMWARE_ETIMER_2)
 FIRMWARE_TGPS_1_0=$(top_srcdir)/src/telegps-v1.0/telegps-v1.0-$(VERSION).ihx
 FIRMWARE_TGPS_2_0=$(top_srcdir)/src/telegps-v2.0/telegps-v2.0-$(VERSION).ihx
 FIRMWARE_TGPS_3_0=$(top_srcdir)/src/telegps-v3.0/telegps-v3.0-$(VERSION).ihx
-FIRMWARE_TGPS=$(FIRMWARE_TGPS_1_0) $(FIRMWARE_TGPS_2_0) $(FIRMWARE_TGPS_3_0)
+FIRMWARE_TGPS_4_0=$(top_srcdir)/src/telegps-v4.0/telegps-v4.0-$(VERSION).ihx
+FIRMWARE_TGPS=$(FIRMWARE_TGPS_1_0) $(FIRMWARE_TGPS_2_0) $(FIRMWARE_TGPS_3_0) $(FIRMWARE_TGPS_4_0)
 
 FIRMWARE_TLCO_2_0=$(top_srcdir)/src/telelco-v2.0/telelco-v2.0-$(VERSION).ihx
 FIRMWARE_TLCO=$(FIRMWARE_TLCO_2_0)
