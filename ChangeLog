@@ -1,3 +1,94 @@
+commit 8d18a0c748a5abe32c63ec6641817e2a79287881
+Merge: 29ab3e8bb 005d1ee0b
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Mon Apr 28 20:37:29 2025 -0600
+
+    Merge branch 'master' into branch-1.9
+
+commit 005d1ee0b7cbc2c46615a942e34aa1d385426f58
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Apr 28 12:52:01 2025 -0700
+
+    Version 1.9.21
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 079e7c2e5c4830c168a88457a33d81f2151ad733
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Apr 28 12:49:21 2025 -0700
+
+    doc: Add 1.9.21 release notes
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 277b6bea4e73aedb1ef052b3b131e93021f547e7
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Apr 28 12:38:16 2025 -0700
+
+    altos: Check full name in rn4678 driver
+    
+    Factory test code uses serial number 0, leaving the BT module name set
+    wrong.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit c0bfcea94160319016ec18d45ebe1e7ac05aafb2
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Mon Apr 28 10:26:59 2025 -0600
+
+    tweaking up the TeleBT turnon scripts for v4.0d
+
+commit 3d5fa063df2691ecc94b1fbf43098e18db482cbc
+Author: Keith Packard <keithp@keithp.com>
+Date:   Wed Apr 23 11:36:24 2025 -0700
+
+    Version 1.9.20.1
+    
+    Patch build for baro range and picolibc 1.8.10
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 84c6ceba62911c5bcb70e6cf530e4d7627546a81
+Author: Keith Packard <keithp@keithp.com>
+Date:   Wed Apr 23 11:26:48 2025 -0700
+
+    altos: Adapt to picolibc 1.8.10 changes
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 8756a1215a69f7fef40de0e10fcd61980ec3a018
+Author: Keith Packard <keithp@keithp.com>
+Date:   Wed Apr 23 09:23:00 2025 -0700
+
+    altoslib: Handle pressure values which are too low (including negative)
+    
+    The atmospheric model didn't deal with pressures below the minimum
+    value correctly and crashed with accesses outside of the base_altitude
+    array.
+    
+    Instead of returning errors, clamp pressure within the model and
+    return a fixed maximum altitude value of 100km.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 029c4ad372c9872c0fce514f52f487a9a837066d
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Tue Mar 25 10:35:48 2025 -0600
+
+    fix confusing typo in 1.9.20 release notes
+
+commit bcfc96cff97fa0dbcf530a4e86e6bd29446c95f4
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Mon Mar 24 13:40:43 2025 -0600
+
+    update Releasing with learnings from 1.9.20 release
+
+commit 29ab3e8bb9ee17caa2d5539e54ece1e5372a9f4f
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Mon Mar 24 13:09:29 2025 -0600
+
+    update ChangeLog for 1.9.20 release
+
 commit 599187030aa7d9388bac5d3205bb3fabb9ec9550
 Merge: 6bee62c13 cafdfee8d
 Author: Bdale Garbee <bdale@gag.com>
