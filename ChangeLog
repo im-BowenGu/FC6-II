@@ -1,3 +1,142 @@
+commit 3fb59bbad8b594c7f21e44d3353ccecaedf4d3c2
+Merge: 9c5f8b4d7 9fdbb25be
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Tue Aug 26 20:49:25 2025 -0600
+
+    Merge branch 'master' into branch-1.9
+
+commit 9fdbb25be8441ae7d92055023400434d290679af
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Aug 25 10:03:30 2025 -0700
+
+    Bump version to 1.9.22
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 5b93835f2fb3846fcffb48be11c6274b5ff54d46
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Aug 25 11:27:13 2025 -0700
+
+    doc: Note that mosaic GPS is external
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 704e4b4a744d79bb4f701392e0caffb9dfae9c87
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Aug 25 10:01:38 2025 -0700
+
+    doc: Add mosaic GPS info to 1.9.22 rel notes
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 3ba484c7b3696a18d87239d5474c633321bd7a2b
+Author: Keith Packard <keithp@keithp.com>
+Date:   Thu Aug 7 13:44:14 2025 -0700
+
+    altos/stm: Go back to default crt0 for flash loader
+    
+    Well, that's silly -- the chip setup code is all in a constructor, so we need
+    the normal crt0 to make sure it gets invoked.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 832d879842ee3b469c5db314b0df2326d7e124d2
+Author: Keith Packard <keithp@keithp.com>
+Date:   Mon Aug 4 14:17:01 2025 -0700
+
+    altos: wait for mosaic receiver to be available at startup
+    
+    Repeat the first mosaic command until the receiver returns a valid
+    response instead of assuming it is alive at startup.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit ac4e78459f5d0a279511982af107e467f1061aad
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sat Jul 26 11:49:41 2025 -0700
+
+    telemega-v7.0: Add Mosaic GPS support
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 0441efc92a2bc001ac1c4fe5696baba83edc8a37
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sat Jul 26 11:46:33 2025 -0700
+
+    altos: Fixup mosaic GPS test program
+    
+    Just some naming changes needed
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 622ff19bf096a46ebf0e6bfde1667b135cc7a751
+Merge: 3b4445fb8 8eabd2e14
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sat Jul 26 11:43:54 2025 -0700
+
+    Merge branch 'gps-mosaic'
+
+commit 3b4445fb8b057ba761263af6a23ede97d1448fb9
+Author: Keith Packard <keithp@keithp.com>
+Date:   Thu Jul 17 13:34:36 2025 +0200
+
+    doc: Update telemetry.txt
+    
+    Add a bunch of new packet formats. Document ADC data mapping
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit ed99d5026c39c76264d8edafd76923d448c6298c
+Author: Keith Packard <keithp@keithp.com>
+Date:   Fri Jun 27 13:22:18 2025 -0700
+
+    doc: Add 1.9.22 release notes
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 09ea1e0e9e51fdca21cceb598ae66b0fae598d0e
+Author: Keith Packard <keithp@keithp.com>
+Date:   Fri Jun 27 09:52:50 2025 -0700
+
+    Version 1.9.21.1
+    
+    Contains TeleMega v7 eeprom log file parsing fixes
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 78944aad76a7ff52b0be691c0e47cc691f86df11
+Author: Keith Packard <keithp@keithp.com>
+Date:   Fri Jun 27 09:48:34 2025 -0700
+
+    altoslib: Add TeleMega v7 .eeprom parsing support
+    
+    Need to be more careful about following the process when adding a new
+    product
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 4c7eebbd7f64c9c466a229aff4fbecb42c192f57
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sat May 31 16:20:05 2025 -0700
+
+    altos: fix telemetrum seeed test payload names
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 62a911bfed5343c0fe73aeef629cd23b95d3f0db
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sun May 25 17:32:30 2025 -0700
+
+    altos: Add telemetrum v4.0 seeed test firmware
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 9c5f8b4d7ac9d008a6cf85be770679fd4e1aec03
+Author: Bdale Garbee <bdale@gag.com>
+Date:   Mon Apr 28 20:39:51 2025 -0600
+
+    update ChangeLog for 1.9.21 release
+
 commit 8d18a0c748a5abe32c63ec6641817e2a79287881
 Merge: 29ab3e8bb 005d1ee0b
 Author: Bdale Garbee <bdale@gag.com>
@@ -873,6 +1012,57 @@ Author: Keith Packard <keithp@keithp.com>
 Date:   Sun Apr 28 15:33:30 2024 -0700
 
     Add EasyTimer v2 firmware
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 8eabd2e148e6cb55a243f53c96fb020746c4f6df
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sat Apr 27 22:38:40 2024 -0700
+
+    telemega-v6.0: Add Mosaic GPS support
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 9bacfae0b74ecba34b74dee7da67fd39ac29a870
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sat Apr 27 22:38:40 2024 -0700
+
+    telemega-v5.0: Add Mosaic GPS support
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit d5264f6ef1415adb1f1f2d5d0cda44d0ef059669
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sat Apr 27 22:38:40 2024 -0700
+
+    telemega-v4.0: Add Mosaic GPS support
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 96476ae0fa5aac05389643727b97e94e6234d75d
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sat Apr 27 22:38:40 2024 -0700
+
+    telemega-v3.0: Add Mosaic GPS support
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit ba8dffff46c73df511649b5292616a46dbb406b2
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sat Apr 27 22:36:20 2024 -0700
+
+    drivers: Add Mosaic GPS driver support
+    
+    This allows switching between on-board and external Mosaic GPS
+    receivers.
+    
+    Signed-off-by: Keith Packard <keithp@keithp.com>
+
+commit 90e7033a52dbcf7c7815c2428526da15c479134f
+Author: Keith Packard <keithp@keithp.com>
+Date:   Sat Apr 27 22:30:29 2024 -0700
+
+    doc: Add 1.9.18 release notes
     
     Signed-off-by: Keith Packard <keithp@keithp.com>
 
