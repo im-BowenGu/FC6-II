@@ -28,6 +28,7 @@
 #include <stdbool.h>
 #include <fcntl.h>
 #include <unistd.h>
+
 #define AO_GPS_NUM_SAT_MASK	(0xf << 0)
 #define AO_GPS_NUM_SAT_SHIFT	(0)
 
