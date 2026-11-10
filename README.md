@@ -1,4 +1,19 @@
-	AltOS - 8051 operating system for Altus-Metrum projects
+# FC6 II
+A fork of AltOS 1.9.22 by Altus Metrum, for use on EMB II avionics. 
+Built for UKROC/TARC 2027 to target a precise apogee with canard control. 
+The main changes are in state estimation and the addition of guidance. 
+Modifications are made under the same licence as the original. 
+This project is not affiliated with Altus Metrum. 
+
+ASRC would like to thank Keith Packard for his help. 
+
+<sub>C6 // Aerospace · ASRC · 2026-27</sub>
+
+
+---
+Original Readme below:
+
+AltOS - 8051 operating system for Altus-Metrum projects
 
 Copyright and License
 
