@@ -78,9 +78,11 @@ Every simulation run writes `sim/logs/<mode>.csv` (100 Hz telemetry),
 `python3 sim/run_dynamic_sim.py --check --log-dir /path/to/logs` to redirect
 them. Logs are intentionally ignored by git.
 
-`cfd-test` runs a Taichi D3Q19 lattice-Boltzmann solve once per selected fin
-state on CUDA (eight states, 600 steps each by default), writes raw lattice
-forces and calibrated physical force/torque rows to `build/cfd/logs/`, fits
+The live CFD leg is GPU-bound: during it, watch `nvidia-smi dmon -s u -d 1`
+rather than CPU usage. `cfd-test` runs a Taichi D3Q19 lattice-Boltzmann solve
+once per selected fin state on CUDA (eight states, 600 steps each by default),
+writes raw lattice forces and calibrated physical force/torque rows to
+`build/cfd/logs/`, fits
 them into `build/cfd/motion.json`, then runs the real 100 Hz firmware loop
 against **that recorded lookup**. The flight loop never calls the flow solver.
 It requires a CUDA-capable GPU and Taichi 1.7+ in a Python 3.11 venv; override
@@ -111,7 +113,10 @@ These are regression bounds on the coupled static-CFD/OpenRocket surrogate,
 `hil/` adds a local HIL bench that runs the **same C guidance core** as the
 flight image (no Python avionics port). A Verilated peripheral model and C++
 bridge consume shared-memory sensor frames from a physics plant that replays
-the OpenRocket F32 flight and the recorded CFD lookup:
+the OpenRocket F32 flight and the recorded CFD lookup. If
+`build/cfd/motion.json` exists from `make ci-live`, HIL uses it automatically;
+otherwise it falls back to the committed `sim/data/cfd/fluidx3d` CSV fit. Override
+with `rockets/s-lx/hil/run.sh --backend cfd --motion /path/to/motion.json`.
 
 ```sh
 make -C rockets/s-lx/hil build   # Verilate RTL + build bridge (needs Verilator)

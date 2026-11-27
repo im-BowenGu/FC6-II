@@ -154,7 +154,8 @@ function renderState(d) {
     ['dynamic pressure', fmt(p.q_ratio, 2)+' × Qref'],
     ['mass / thrust / drag', fmt(p.mass_kg,3)+' kg / '+fmt(p.thrust_n,1)+' / '+fmt(p.drag_n,1)+' N'],
     ['pitch moment', fmt(p.M_pitch_nm, 4)+' N·m'],
-    ['servo model', `${fmt(act.pwm_hz,0)} Hz latch · ${fmt(act.tau_s,3)} s lag · ${fmt(act.rate_limit_dps,0)} °/s`]
+    ['servo model', `${fmt(act.pwm_hz,0)} Hz latch · ${fmt(act.tau_s,3)} s lag · ${fmt(act.rate_limit_dps,0)} °/s`],
+    ['CFD lookup', (r.aero && r.aero.source) || '—']
   ]);
 }
 

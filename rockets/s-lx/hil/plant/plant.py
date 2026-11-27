@@ -209,6 +209,9 @@ def plant_step(state: dict, cmd: list[float], or_data: dict, aero: dict,
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--backend", choices=("cfd", "mujoco"), default="cfd")
+    ap.add_argument("--motion", default=None,
+                    help="recorded Taichi/CUDA motion JSON "
+                         "(default: ../../build/cfd/motion.json if present)")
     ap.add_argument("--tilt", type=float, default=0.0, help="rail-exit tilt [deg]")
     ap.add_argument("--wind", type=float, default=0.0, help="steady wind [m/s]")
     ap.add_argument("--max-t", type=float, default=40.0)
@@ -218,7 +221,17 @@ def main() -> int:
     out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
     or_data = slxsim.read_or_flight(slxsim.OR_CSV)
-    aero = slxsim.read_cfd_lookup()
+    # Prefer the recorded Taichi/CUDA sweep produced by `make ci-live`. The
+    # committed fluidx3d CSV fit remains the offline fallback. The HIL plant
+    # never solves CFD itself; it replays whichever recorded lookup is chosen.
+    motion_path = Path(args.motion).resolve() if args.motion else \
+        (HIL.parent / "build" / "cfd" / "motion.json").resolve()
+    if motion_path.exists():
+        aero = json.loads(motion_path.read_text())
+        aero_source = str(motion_path.relative_to(HIL.parent))
+    else:
+        aero = slxsim.read_cfd_lookup()
+        aero_source = "committed sim/data/cfd/fluidx3d logs"
     sensors = Segment("slx_hil_sensors", SENSOR_FMT)
     fins = Segment("slx_hil_fins", FINS_FMT)
 
@@ -293,7 +306,8 @@ def main() -> int:
     (out / "run.json").write_text(json.dumps({
         "backend": args.backend, "tilt_deg": args.tilt, "wind_mps": args.wind,
         "apogee_m": round(state["max_z"], 2), "duration_s": round(state["t"], 2),
-        "aero": {"kd": aero["kd"], "cd0": aero["Cd0"], "rms": aero["drag_rms"]},
+        "aero": {"source": aero_source, "kd": aero["kd"],
+                 "cd0": aero["Cd0"], "rms": aero["drag_rms"]},
         "actuator": {
             "pwm_hz": SERVO_PWM_HZ, "tau_s": SERVO_TAU_S,
             "rate_limit_dps": SERVO_RATE_DPS,
@@ -302,7 +316,8 @@ def main() -> int:
         },
         "note": "guidance is the real C core in cpp/bridge.cpp, not a Python port",
     }, indent=2) + "\n")
-    print(f"plant: backend={args.backend} apogee={state['max_z']:.2f} m "
+    print(f"plant: backend={args.backend} aero={aero_source} "
+          f"apogee={state['max_z']:.2f} m "
           f"duration={state['t']:.2f} s logs={out}")
     sensors.close()
     fins.close()
