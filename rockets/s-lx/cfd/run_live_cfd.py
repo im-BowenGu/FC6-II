@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Run a live FluidX3D sweep over selected fin movements, then record it.
 
-This is the "CFD first, replay later" PR check:
+This is the "CFD first, replay later" optional live-CI step:
 
 1. Run FluidX3D (FP16S, D3Q19/SRT) headless for a small selection of fin
    states, one STL per state. No flow solver runs inside the flight loop.
@@ -11,11 +11,11 @@ This is the "CFD first, replay later" PR check:
 3. ``sim/run_dynamic_sim.py --check --motion build/cfd/motion.json`` then flies
    the 100 Hz firmware loop against that recorded lookup.
 
-FluidX3D needs an OpenCL device. A GitHub-hosted runner has none, so CI for
-this target must use a self-hosted runner labelled ``fluidx3d-opencl`` with a
-FluidX3D checkout available (``FLUIDX3D_SRC``), or a prebuilt binary
-(``--binary``). The committed ``sim/data/`` CSVs are the offline fallback for
-local development; this script intentionally does not use them.
+FluidX3D needs an OpenCL device, so this step is optional and runs only in
+local CI on a machine with one. Provide a FluidX3D checkout
+(``FLUIDX3D_SRC``) or a prebuilt binary (``--binary``). The committed
+``sim/data/`` CSVs are the offline fallback; this script intentionally does
+not use them.
 """
 
 from __future__ import annotations

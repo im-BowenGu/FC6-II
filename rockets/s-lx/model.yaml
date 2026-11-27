@@ -61,7 +61,7 @@ aero:
   live_sweep: cfd/run_live_cfd.py
   live_inputs: cfd/fluidx3d/{defines.hpp,setup.cpp,S-LX_cfd.stl,configs/*.stl}
   live_output: build/cfd/motion.json
-  live_runner: self-hosted, label fluidx3d-opencl; env FLUIDX3D_SRC, OCL_LIB, ICD
+  live_runner: local machine with an OpenCL device; env FLUIDX3D_SRC, OCL_LIB, ICD
   replay_command: sim/run_dynamic_sim.py --check --motion build/cfd/motion.json
   excluded_from_fit: [xmix_p4, xmix_p8]
   exclusion_reason: 4 deg deflection is below the 5.38 mm voxel scale
@@ -89,8 +89,11 @@ models:
 verification:
   host_tests: tests/test_slx_profile.c
   simulator: sim/run_dynamic_sim.py
-  pr_command: make -C rockets/s-lx cfd-test
+  ci_command: make -C rockets/s-lx ci
+  ci_script: rockets/s-lx/ci/run-local.sh
+  ci_live_command: make -C rockets/s-lx ci-live
   offline_command: make -C rockets/s-lx test
+  logs: sim/logs/{mode}.csv, sim/logs/{mode}.events.jsonl, sim/logs/summaries.json
   checks:
     - nominal guided apogee within 229 +/- 5 m
     - nominal duration within 34-37 s

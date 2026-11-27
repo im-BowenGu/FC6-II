@@ -19,6 +19,8 @@ Outputs (in this directory):
   dynamic_summary.json   apogee/duration/landing and fit coefficients
   plots/*.png            SVG-rendered comparison plots
   guided_motion.mp4      animated trajectory + fin commands
+  logs/                  per-mode telemetry CSV + state/event JSONL + summaries
+                         (always written, including --check; override --log-dir)
 
 No third-party Python modules are needed; SVG is rasterised with ImageMagick
 and the movie is assembled with ffmpeg.
@@ -38,8 +40,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 # Self-contained verification bundle: the OpenRocket reference flight and the
-# frozen FP16S force CSVs travel with the profile so a PR check needs no other
-# repository and no third-party Python modules.
+# frozen FP16S force CSVs travel with the profile so a local CI run needs no
+# other repository and no third-party Python modules.
 DATA = HERE / "data"
 ROCKET = DATA
 CFD = DATA / "cfd"
@@ -188,7 +190,7 @@ def cfd_final_force(csv_path: Path) -> dict[str, float] | None:
 def read_cfd_lookup(configs: list[str] | None = None, steps: int = 20000) -> dict:
     """Fit the recorded fin-state force logs into a motion lookup.
 
-    `configs` lets the live-CFD PR check fit only the states it actually
+    `configs` lets the live-CFD local CI step fit only the states it actually
     solved. The 4/8 deg rows are validation-only: their deflection is below
     one voxel at 5.38 mm resolution, so they are excluded from the fit even
     when present.
@@ -859,10 +861,10 @@ def make_movie(guided: list[dict], outdir: Path, fps: int = 10) -> None:
 
 
 # ---------------------------------------------------------------------------
-# PR verification
+# Local CI verification
 # ---------------------------------------------------------------------------
 def check_summaries(summaries: dict[str, dict], aero: dict) -> None:
-    """Fail a pull request when the profile no longer meets its flight target.
+    """Fail the local CI run when the profile no longer meets its flight target.
 
     These are regression bounds on the coupled 100 Hz surrogate, not a claim
     of flight qualification. The nominal target is 229 m +/- 5 m with a
@@ -906,9 +908,96 @@ def check_summaries(summaries: dict[str, dict], aero: dict) -> None:
         errors.append(f"CFD drag fit RMS {aero['drag_rms']:.4f} > 0.05")
 
     if errors:
-        raise SystemExit("PR verification FAILED:\n  " + "\n  ".join(errors))
-    print("PR verification PASSED: 229 +/- 5 m target, duration window, "
+        raise SystemExit("Local CI verification FAILED:\n  " + "\n  ".join(errors))
+    print("Local CI verification PASSED: 229 +/- 5 m target, duration window, "
           "5 deg offset recovery, wind and noise scenarios")
+
+
+# ---------------------------------------------------------------------------
+# Simulation logging
+# ---------------------------------------------------------------------------
+def _event(t: float, kind: str, detail: str, row: dict) -> dict:
+    """One compact, machine-readable log event."""
+    return {
+        "t_s": round(t, 4),
+        "event": kind,
+        "detail": detail,
+        "z_m": round(row["z_m"], 3),
+        "speed_mps": round(row["speed_mps"], 3),
+        "state": row["state"],
+        "fin_deg": [round(row[f"fin{i}_deg"], 3) for i in range(4)],
+        "pitch_deg": round(row["pitch_deg"], 3),
+        "roll_deg": round(row["roll_deg"], 3),
+    }
+
+
+def run_events(mode: str, rows: list[dict], summary: dict) -> list[dict]:
+    """Derive an event stream from one completed run's telemetry."""
+    events: list[dict] = []
+    prev_state = rows[0]["state"]
+    events.append(_event(rows[0]["t_s"], "start", f"mode={mode}", rows[0]))
+    rail_logged = burnout_logged = sat_logged = False
+    for row in rows:
+        t = row["t_s"]
+        if row["state"] != prev_state:
+            events.append(_event(t, "state_change",
+                                 f"{prev_state} -> {row['state']}", row))
+            prev_state = row["state"]
+        if not rail_logged and t >= RAIL_CLEARANCE_MS / 1000.0:
+            rail_logged = True
+            events.append(_event(t, "rail_exit",
+                                 "launch rail clearance; fins live", row))
+        if not burnout_logged and t >= BURNOUT_T_S:
+            burnout_logged = True
+            events.append(_event(t, "burnout",
+                                 "motor thrust ended; coast phase", row))
+        if not sat_logged and max(abs(row[f"fin{i}_deg"]) for i in range(4)) \
+                >= MAX_FIN_DEG - 0.05:
+            sat_logged = True
+            events.append(_event(t, "fin_saturation",
+                                 "first fin command at the +/-15 deg rail", row))
+    apo = max(rows, key=lambda r: r["z_m"])
+    events.append(_event(apo["t_s"], "apogee",
+                         f"apogee {apo['z_m']:.2f} m", apo))
+    if summary["tilt_recovery_s"] is not None:
+        rt = summary["tilt_recovery_s"]
+        row = min(rows, key=lambda r: abs(r["t_s"] - rt))
+        events.append(_event(row["t_s"], "tilt_recovered",
+                             "entered the powered 1 deg correction band", row))
+    last = rows[-1]
+    events.append(_event(last["t_s"], "touchdown",
+                         f"landing speed {last['speed_mps']:.2f} m/s", last))
+    return sorted(events, key=lambda e: e["t_s"])
+
+
+def write_logs(runs: dict[str, list[dict]], summaries: dict[str, dict],
+               aero: dict, outdir: Path) -> Path:
+    """Write per-mode telemetry, an event stream and run metadata.
+
+    Always called, including from --check, so a failed CI run leaves a full
+    audit trail instead of only the console summary table.
+    """
+    outdir.mkdir(parents=True, exist_ok=True)
+    for mode, rows in runs.items():
+        fields = list(rows[0].keys())
+        with (outdir / f"{mode}.csv").open("w", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=fields)
+            w.writeheader()
+            w.writerows(rows)
+        with (outdir / f"{mode}.events.jsonl").open("w") as f:
+            for event in run_events(mode, rows, summaries[mode]):
+                f.write(json.dumps(event) + "\n")
+    (outdir / "summaries.json").write_text(json.dumps(summaries, indent=2) + "\n")
+    (outdir / "run.json").write_text(json.dumps({
+        "simulator": "run_dynamic_sim.py",
+        "plant": "OpenRocket F32 + FP16S static fin lookup",
+        "loop_hz": 1.0 / DT,
+        "cfd_samples": [s["name"] for s in aero["samples"]],
+        "kd": aero["kd"], "cd0": aero["Cd0"], "drag_rms": aero["drag_rms"],
+        "linear_aero_per_deg_at_qref": aero["linear"],
+        "modes": list(runs),
+    }, indent=2) + "\n")
+    return outdir
 
 
 # ---------------------------------------------------------------------------
@@ -932,6 +1021,7 @@ def main() -> None:
     dump_path = cli_option("--dump-lookup")
     cfd_configs_raw = cli_option("--cfd-configs")
     cfd_steps_raw = cli_option("--cfd-steps")
+    log_dir_raw = cli_option("--log-dir")
 
     if not OR_CSV.exists():
         raise SystemExit(f"Missing OpenRocket reference flight: {OR_CSV}")
@@ -986,6 +1076,10 @@ def main() -> None:
               f"pwr_err={summary['powered_peak_tilt_error_deg']:5.2f} deg  "
               f"rec={rec_s}  coast_fin={summary['coast_max_fin_deg']:4.1f} deg  "
               f"drift={summary['max_lateral_m']:5.1f} m")
+
+    log_path = write_logs(runs, summaries, aero,
+                          Path(log_dir_raw) if log_dir_raw else HERE / "logs")
+    print(f"Simulation logs: {log_path}")
 
     if "--check" in sys.argv:
         check_summaries(summaries, aero)

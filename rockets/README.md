@@ -13,8 +13,14 @@ make -C src ROCKET=s-lx
 # Build only the S-LX STM32F103 flight target
 make -C src/s-lx-bluepill-f103 ROCKET=s-lx
 
-# Host tests and PR verification for that rocket
-make -C rockets/s-lx test
+# Local CI: host tests, model manifest and 100 Hz simulation
+make -C rockets/s-lx ci
+
+# Optional live-CFD leg (needs an OpenCL device and FLUIDX3D_SRC)
+make -C rockets/s-lx ci-live
+
+# Or run the standalone local CI script
+rockets/s-lx/ci/run-local.sh
 ```
 
 `src/Makefile.defs` includes `rockets/<ROCKET>/profile.mk` only when `ROCKET`
@@ -42,20 +48,23 @@ Keep the guidance core free of radio, GNSS, pyro and ground-command code. Rule
 
 ## Verification contract
 
-A pull request must pass `make -C rockets/<name> test`, which runs:
+Local CI runs `make -C rockets/<name> ci` (equivalently `make test`), which
+runs:
 
 1. host C tests of the guidance constants, state machine and mixer;
 2. a 100 Hz firmware-in-the-loop trajectory surrogate that asserts the target
    apogee within ±5 m and the duration window;
 3. extended scenarios (sensor noise, 5° rail-exit offset and steady wind).
 
-The surrogate is a regression oracle, not flight qualification. Hardware-in-
-the-loop sensor, servo, SD and timing tests remain mandatory before flight.
+Every run writes per-mode telemetry, state-transition/event logs and summaries
+to `rockets/<name>/sim/logs/` (override with `--log-dir`), including failed
+checks. The surrogate is a regression oracle, not flight qualification.
+Hardware-in-the-loop sensor, servo, SD and timing tests remain mandatory
+before flight.
 
-## CI installation
+## Where CI runs
 
-`rockets/s-lx/ci/rocket-profile.yml` is kept outside `.github/workflows/`
-because this fork's OAuth token lacks the `workflow` scope needed to push a
-workflow file. A maintainer (or a token with that scope) should copy it to
-`.github/workflows/rocket-profile.yml` on the PR branch before requesting
-review; the workflow itself is additive and fails on any upstream deletion.
+Verification is local-only. There is no GitHub Actions workflow and no pull
+request gate. `rockets/s-lx/ci/run-local.sh` is the entry point for a
+developer machine or a self-hosted local CI server; set `RUN_LIVE_CFD=1` to
+include the FluidX3D fin-state sweep on a machine with an OpenCL device.

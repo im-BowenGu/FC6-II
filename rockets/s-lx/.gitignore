@@ -3,5 +3,6 @@ sim/dynamic_flight.csv
 sim/dynamic_summary.json
 sim/plots/
 sim/guided_motion.mp4
+sim/logs/
 __pycache__/
 *.pyc

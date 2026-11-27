@@ -1,4 +1,4 @@
-# S-LX guidance profile (UKROC 2027 competition, additive upstream PR)
+# S-LX guidance profile (UKROC 2027 competition)
 
 This is a **per-rocket profile** for the full upstream FC6-II tree. It is
 compiled only when selected with `ROCKET=s-lx`; no upstream file is
@@ -17,7 +17,8 @@ stack in the main rocket project is untouched.
 | `model.yaml` | rough model manifest: dimensions, motor, target, aero inputs, CAD references |
 | `cad/`, `cfd/` | OpenRocket models, fin STL, movable-fin state table and roadmap |
 | `sim/` | self-contained 100 Hz firmware-in-the-loop trajectory surrogate |
-| `Makefile` | `make test` = offline host tests + PR checks; `make cfd-test` = live fin-state CFD + recorded-motion flight check |
+| `Makefile` | `make ci` = offline host tests + local CI checks; `make ci-live` = live fin-state CFD + recorded-motion replay |
+| `ci/run-local.sh` | standalone local CI entry point; no GitHub Actions, no PR gate |
 
 The flight target lives at `src/s-lx-bluepill-f103/` and is appended to
 `ARMM3DIRS` only for this rocket. It uses three new shared drivers
@@ -31,7 +32,7 @@ can set `FAT_COMMANDS=0`. No shared driver logic is rewritten.
 | Item | Value |
 |---|---|
 | Motor | AeroTech F32, 24 mm, single-use, 56.9 Ns, 4 s delay |
-| Target apogee | 229 m / 750 ft, ±5 m in CI |
+| Target apogee | 229 m / 750 ft, ±5 m in local CI |
 | Duration window | 34–37 s |
 | Loop | 100 Hz, `DT = 0.01 s` |
 | Launch detect | arm closed and `|a| > 2.0 g` |
@@ -65,10 +66,17 @@ commercial parts, while the assembled controller is specific to this rocket.
 ## Build and verify
 
 ```sh
-make -C rockets/s-lx test     # offline: host C tests + frozen-lookup sim
-make -C rockets/s-lx cfd-test # live CFD sweep, then recorded-motion sim
+make -C rockets/s-lx ci       # local CI: host C tests + frozen-lookup sim
+make -C rockets/s-lx ci-live  # live CFD sweep, then recorded-motion sim
+rockets/s-lx/ci/run-local.sh  # standalone local CI entry point
 make -C src/s-lx-bluepill-f103 ROCKET=s-lx   # ARM flight target
 ```
+
+Every simulation run writes `sim/logs/<mode>.csv` (100 Hz telemetry),
+`sim/logs/<mode>.events.jsonl` (state transitions and flight milestones) and
+`sim/logs/summaries.json` / `run.json`, including when `--check` fails. Use
+`python3 sim/run_dynamic_sim.py --check --log-dir /path/to/logs` to redirect
+them. Logs are intentionally ignored by git.
 
 `cfd-test` runs FluidX3D once per selected fin state (eight states by
 default, 20k steps each), writes the force/torque history to
@@ -79,12 +87,12 @@ calls the flow solver. Requires an OpenCL device and `FLUIDX3D_SRC`, plus
 is `make cfd-record CFD_ARGS="--configs neutral,pitch_p15 --steps 2000"`.
 The committed `sim/data/` CSVs remain the offline fallback for `make test`.
 
-The GitHub Actions definition is stored as `ci/rocket-profile.yml` in this
-profile directory. Copy it to `.github/workflows/rocket-profile.yml` in the
-PR branch (needs a token with `workflow` scope; this fork's OAuth token does
-not have it). The CFD job runs on a self-hosted `fluidx3d-opencl` runner
-because GitHub-hosted runners have no OpenCL device; a separate Ubuntu job
-fails the PR if any upstream file is deleted or `README.md` changes.
+There is no GitHub Actions workflow and no PR gate. The former workflow
+(`ci/rocket-profile.yml`), which also asserted that upstream files were not
+deleted and that the top-level `README.md` matched upstream, has been removed.
+`ci/run-local.sh` is the sole CI entry point: it runs offline by default and
+adds the live-CFD leg only when `RUN_LIVE_CFD=1` on a machine with an OpenCL
+device. No check compares this repository's README to any upstream ref.
 
 The simulator check prints all eight modes and asserts:
 
