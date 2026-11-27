@@ -51,3 +51,11 @@ A pull request must pass `make -C rockets/<name> test`, which runs:
 
 The surrogate is a regression oracle, not flight qualification. Hardware-in-
 the-loop sensor, servo, SD and timing tests remain mandatory before flight.
+
+## CI installation
+
+`rockets/ukroc-2027/ci/rocket-profile.yml` is kept outside `.github/workflows/`
+because this fork's OAuth token lacks the `workflow` scope needed to push a
+workflow file. A maintainer (or a token with that scope) should copy it to
+`.github/workflows/rocket-profile.yml` on the PR branch before requesting
+review; the workflow itself is additive and fails on any upstream deletion.

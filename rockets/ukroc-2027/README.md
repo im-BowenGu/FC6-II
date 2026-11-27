@@ -69,6 +69,12 @@ make -C rockets/ukroc-2027 test     # host C tests + simulator PR check
 make -C src/ukroc-bluepill-f103 ROCKET=ukroc-2027   # ARM flight target
 ```
 
+The GitHub Actions definition is stored as `ci/rocket-profile.yml` in this
+profile directory. Copy it to `.github/workflows/rocket-profile.yml` in the
+PR branch (needs a token with `workflow` scope; this fork's OAuth token does
+not have it). It runs `make -C rockets/ukroc-2027 test` and a guard that
+fails the PR if any upstream file is deleted or `README.md` changes.
+
 The simulator check prints all eight modes and asserts:
 
 * nominal guided apogee **231.34 m / 35.50 s**, inside 229 ± 5 m and 34–37 s;
