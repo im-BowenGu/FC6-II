@@ -8,13 +8,13 @@ behaviour are unchanged unless a profile is selected.
 
 ```sh
 # Build the full upstream tree with one extra target available
-make -C src ROCKET=ukroc-2027
+make -C src ROCKET=s-lx
 
-# Build only the UKROC STM32F103 flight target
-make -C src/ukroc-bluepill-f103 ROCKET=ukroc-2027
+# Build only the S-LX STM32F103 flight target
+make -C src/s-lx-bluepill-f103 ROCKET=s-lx
 
 # Host tests and PR verification for that rocket
-make -C rockets/ukroc-2027 test
+make -C rockets/s-lx test
 ```
 
 `src/Makefile.defs` includes `rockets/<ROCKET>/profile.mk` only when `ROCKET`
@@ -54,7 +54,7 @@ the-loop sensor, servo, SD and timing tests remain mandatory before flight.
 
 ## CI installation
 
-`rockets/ukroc-2027/ci/rocket-profile.yml` is kept outside `.github/workflows/`
+`rockets/s-lx/ci/rocket-profile.yml` is kept outside `.github/workflows/`
 because this fork's OAuth token lacks the `workflow` scope needed to push a
 workflow file. A maintainer (or a token with that scope) should copy it to
 `.github/workflows/rocket-profile.yml` on the PR branch before requesting

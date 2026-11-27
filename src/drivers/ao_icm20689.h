@@ -1,5 +1,5 @@
 /*
- * Minimal ICM-20689 I2C IMU driver for the UKROC STM32 target.
+ * Minimal ICM-20689 I2C IMU driver for the S-LX STM32 target.
  *
  * Full-scale ranges are chosen for a model rocket: ±16 g acceleration keeps
  * the F32 boost phase in range, and ±1000 °/s leaves gyro headroom. Changing

@@ -2,7 +2,7 @@ include $(TOPDIR)/Makedefs
 
 AO_VPATH=$(TOPDIR)/product:$(TOPDIR)/drivers:$(TOPDIR)/kernel:$(TOPDIR)/util:$(TOPDIR)/kalman:$(TOPDIR)/aes:$(TOPDIR)/math:$(TOPDIR)/draw:$(TOPDIR)
 
-# Optional per-rocket guidance profile. `make ROCKET=ukroc-2027` adds that
+# Optional per-rocket guidance profile. `make ROCKET=s-lx` adds that
 # profile's sources and headers; every existing upstream build is unchanged
 # when ROCKET is unset.
 ifneq ($(strip $(ROCKET)),)

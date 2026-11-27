@@ -1,0 +1,5 @@
+ao_product.h
+s-lx-bluepill-f103-*.elf
+s-lx-bluepill-f103-*.ihx
+s-lx-bluepill-f103-*.map
+*.dfu

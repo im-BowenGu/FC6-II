@@ -1,5 +1,5 @@
 /*
- * Copyright © 2026 UKROC STM32 integration
+ * Copyright © 2026 S-LX STM32 integration
  *
  * This program is free software; you can redistribute it and/or modify it
  * under the terms of the GNU General Public License as published by the Free

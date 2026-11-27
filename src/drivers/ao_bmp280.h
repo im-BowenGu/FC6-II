@@ -1,5 +1,5 @@
 /*
- * Minimal BMP280 I2C barometer driver for the UKROC STM32 target.
+ * Minimal BMP280 I2C barometer driver for the S-LX STM32 target.
  *
  * The device is a commercially available breakout on I2C1 at 0x76. The driver
  * uses the AltOS STM32F1 I2C API directly; it has no radio, GPS or pyro side

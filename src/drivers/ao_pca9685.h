@@ -1,5 +1,5 @@
 /*
- * Minimal PCA9685 16-channel PWM driver for the UKROC STM32 target.
+ * Minimal PCA9685 16-channel PWM driver for the S-LX STM32 target.
  *
  * The four aft fins are channels 0..3. Commands are pulse widths in
  * microseconds; 1500 µs is mechanical centre.
