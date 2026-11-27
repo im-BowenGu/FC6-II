@@ -11,7 +11,8 @@ This is a *coupled surrogate*, not a moving-boundary CFD solve:
   * The 100 Hz guidance loop is ported line-for-line from the shared guidance
     law (Rust `guidance-core` and the unchanged STM32 Arduino sketch):
     reference table, baro/accel vertical-speed estimate, 0-4 deg trim, X mix,
-    rail hold and descent neutralisation.  Its fin commands feed the aero
+    rail hold and descent neutralisation.  Its fin commands pass through a
+    50 Hz PCA9685 latch and a slew-limited 35 ms servo lag before the aero
     lookup, whose forces/moments close a 6-DOF-lite trajectory integration.
 
 Outputs (in this directory):
@@ -79,6 +80,9 @@ BURNOUT_T_S = 2.0
 APOGEE_DRAG_G = 1.55
 VV_BARO_BLEND = 0.05
 SERVO_TAU_S = 0.035        # PCA9685 50 Hz + small analogue servo lag
+SERVO_PWM_HZ = 50.0        # PCA9685 frame rate: the command is latched, not continuous
+SERVO_RATE_DPS = 300.0     # conservative slew limit (60 deg in 0.2 s)
+SERVO_PWM_TICKS = max(1, int(round(1.0 / (DT * SERVO_PWM_HZ))))
 CDA_PARA = 0.150           # 470 mm canopy, Cd ~0.865; gives ~8.1 m/s descent
 
 # Disturbance-rejection test: rail-exit attitude offset and recovery band.
@@ -448,6 +452,8 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
     z = vx = vy = vz = 0.0
     p = r = psi = p_rate = r_rate = psi_rate = 0.0
     fin_act = [0.0] * 4
+    fin_cmd_latched = [0.0] * 4
+    fin_rate_dps = [0.0] * 4
     max_z = 0.0
     recovered = False
     rows: list[dict] = []
@@ -506,9 +512,20 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
         else:
             fin_cmd = ctrl.update(t_ms, z, accel_body, rates, flying_armed=True)
 
-        # Servo lag (first order); neutral is always reached in descent/fault.
+        # PCA9685 50 Hz command latch, then a slew-limited first-order actuator.
+        # The guidance output is not applied instantaneously: it is held for a
+        # full PWM frame, rate-limited like a real servo, and only then used to
+        # evaluate the recorded CFD lookup. Neutral is always reached in
+        # descent/fault because the guidance command itself goes to zero.
+        if step % SERVO_PWM_TICKS == 0:
+            fin_cmd_latched[:] = fin_cmd
         for i in range(4):
-            fin_act[i] += (fin_cmd[i] - fin_act[i]) * (DT / SERVO_TAU_S)
+            target = fin_act[i] + (fin_cmd_latched[i] - fin_act[i]) * \
+                (DT / SERVO_TAU_S)
+            delta = clamp(target - fin_act[i],
+                              -SERVO_RATE_DPS * DT, SERVO_RATE_DPS * DT)
+            fin_act[i] += delta
+            fin_rate_dps[i] = delta / DT
         d0, d1, d2, d3 = fin_act
         pitch_modal = (d0 - d2) / 2.0
         yaw_modal = (d1 - d3) / 2.0
@@ -636,6 +653,10 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
             "roll_rate_dps": math.degrees(r_rate),
             "yaw_rate_dps": math.degrees(psi_rate),
             "fin0_deg": d0, "fin1_deg": d1, "fin2_deg": d2, "fin3_deg": d3,
+            "fin_cmd0_deg": fin_cmd_latched[0], "fin_cmd1_deg": fin_cmd_latched[1],
+            "fin_cmd2_deg": fin_cmd_latched[2], "fin_cmd3_deg": fin_cmd_latched[3],
+            "fin_rate0_dps": fin_rate_dps[0], "fin_rate1_dps": fin_rate_dps[1],
+            "fin_rate2_dps": fin_rate_dps[2], "fin_rate3_dps": fin_rate_dps[3],
             "pitch_modal_deg": pitch_modal, "yaw_modal_deg": yaw_modal,
             "roll_modal_deg": roll_modal, "tilt_cmd_deg": ctrl.tilt_cmd,
             "vv_est_mps": ctrl.vv_est, "pred_apo_m": ctrl.pred_apo,

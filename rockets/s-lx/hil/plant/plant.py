@@ -8,6 +8,10 @@ the Verilated peripheral + real STM32 guidance core. Two backends:
   cfd     - OpenRocket F32 plant + recorded static fin lookup (validated surrogate)
   mujoco  - MuJoCo integrates the attitude joints with the same CFD moments
 
+Both backends use the same transient actuator model: a 50 Hz PCA9685 command
+latch, 300 deg/s slew limit and 35 ms first-order servo lag; the CFD lookup is
+evaluated with the actual fin angles.
+
 This is the *plant*, not an avionics port: the guidance loop is the actual C
 core in the C++ bridge.
 """
@@ -37,6 +41,10 @@ from shm import FINS_FMT, SENSOR_FMT, FLAG_DONE, FLAG_RUNNING, Segment  # noqa: 
 DT = slxsim.DT
 G = slxsim.G
 SEA_LEVEL_PA = 101325.0
+SERVO_TAU_S = slxsim.SERVO_TAU_S
+SERVO_PWM_HZ = slxsim.SERVO_PWM_HZ
+SERVO_RATE_DPS = slxsim.SERVO_RATE_DPS
+SERVO_PWM_TICKS = slxsim.SERVO_PWM_TICKS
 
 
 class MujocoAttitude:
@@ -92,10 +100,20 @@ def plant_step(state: dict, cmd: list[float], or_data: dict, aero: dict,
     by = (math.cos(p), 0.0, -math.sin(p))
     bz = (-math.sin(p) * math.sin(r), math.cos(r), -math.cos(p) * math.sin(r))
 
-    # Servo lag, same first-order model as the recorded-motion surrogate.
+    # Same transient actuator model as the 100 Hz surrogate: the PCA9685
+    # latches the guidance command at 50 Hz, the servo slews at a finite rate,
+    # and a first-order lag gives the mechanical response. The CFD lookup is
+    # then evaluated with the *actual* fin positions, not the raw command.
+    if state["pwm_tick"] % SERVO_PWM_TICKS == 0:
+        state["pwm_cmd"][:] = cmd
+    state["pwm_tick"] += 1
     fin = state["fin_act"]
     for i in range(4):
-        fin[i] += (cmd[i] - fin[i]) * (DT / slxsim.SERVO_TAU_S)
+        target = fin[i] + (state["pwm_cmd"][i] - fin[i]) * (DT / SERVO_TAU_S)
+        delta = max(-SERVO_RATE_DPS * DT,
+                    min(SERVO_RATE_DPS * DT, target - fin[i]))
+        fin[i] += delta
+        state["fin_rate_dps"][i] = delta / DT
     pitch_modal = (fin[0] - fin[2]) / 2.0
     yaw_modal = (fin[1] - fin[3]) / 2.0
     roll_modal = sum(fin) / 4.0
@@ -181,7 +199,9 @@ def plant_step(state: dict, cmd: list[float], or_data: dict, aero: dict,
         "ax_g": accel_body[0], "ay_g": accel_body[1], "az_g": accel_body[2],
         "gx_dps": math.degrees(p_rate), "gy_dps": math.degrees(r_rate),
         "gz_dps": math.degrees(psi_rate), "q_ratio": q_ratio,
-        "fin_act_deg": list(fin), "drag_n": drag, "mass_kg": mass,
+        "fin_act_deg": list(fin), "fin_cmd_deg": list(state["pwm_cmd"]),
+        "fin_rate_dps": list(state["fin_rate_dps"]),
+        "drag_n": drag, "mass_kg": mass,
         "thrust_n": thrust, "dCd_cfd": dCd, "M_pitch_nm": M_p,
     }
 
@@ -208,7 +228,9 @@ def main() -> int:
         "vx": 0.0, "vy": 0.0, "vz": 0.0,
         "p": 0.0, "r": 0.0, "psi": 0.0,
         "p_rate": 0.0, "r_rate": 0.0, "psi_rate": 0.0,
-        "fin_act": [0.0] * 4, "recovered": False, "max_z": 0.0,
+        "fin_act": [0.0] * 4, "pwm_cmd": [0.0] * 4,
+        "fin_rate_dps": [0.0] * 4, "pwm_tick": 0,
+        "recovered": False, "max_z": 0.0,
         "tilt_deg": args.tilt, "tilt_applied": False,
     }
     events: list[dict] = []
@@ -240,8 +262,15 @@ def main() -> int:
             events.append({"t_s": round(state["t"], 3), "from": last_state,
                            "to": f["state"], "alt_m": round(state["z"], 2)})
             last_state = f["state"]
-        rows.append({**published, "fin_cmd_deg": [f[f"fin_cmd_deg{i}"] for i in range(4)],
-                     "fw_state": f["state"]})
+        row = {k: v for k, v in published.items()
+               if k not in ("fin_act_deg", "fin_cmd_deg", "fin_rate_dps")}
+        for i in range(4):
+            row[f"fin_act_deg{i}"] = published["fin_act_deg"][i]
+            row[f"fin_cmd_deg{i}"] = published["fin_cmd_deg"][i]
+            row[f"fin_rate_dps{i}"] = published["fin_rate_dps"][i]
+            row[f"fw_fin_deg{i}"] = f[f"fin_cmd_deg{i}"]
+        row["fw_state"] = f["state"]
+        rows.append(row)
         if f["flags"] & FLAG_DONE:
             break
 
@@ -265,6 +294,12 @@ def main() -> int:
         "backend": args.backend, "tilt_deg": args.tilt, "wind_mps": args.wind,
         "apogee_m": round(state["max_z"], 2), "duration_s": round(state["t"], 2),
         "aero": {"kd": aero["kd"], "cd0": aero["Cd0"], "rms": aero["drag_rms"]},
+        "actuator": {
+            "pwm_hz": SERVO_PWM_HZ, "tau_s": SERVO_TAU_S,
+            "rate_limit_dps": SERVO_RATE_DPS,
+            "model": "50 Hz command latch + slew-limited first-order servo; "
+                     "CFD lookup uses actual fin angles",
+        },
         "note": "guidance is the real C core in cpp/bridge.cpp, not a Python port",
     }, indent=2) + "\n")
     print(f"plant: backend={args.backend} apogee={state['max_z']:.2f} m "

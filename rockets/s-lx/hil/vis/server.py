@@ -28,13 +28,26 @@ DEFAULT_LOGS = HIL / "logs"
 # Fields charted from the firmware (bridge) log. The browser receives one
 # downsampled array per field, keyed by time in milliseconds.
 BRIDGE_FIELDS = (
-    "alt_m", "vv_ms", "pred_apo_m", "fin0", "fin1", "fin2", "fin3",
-    "pitch_deg", "roll_deg", "ax_g", "ay_g", "az_g", "gx_dps", "gy_dps",
+    "alt_m", "vv_ms", "pred_apo_m", "ref_alt_m", "ref_vv_ms",
+    "fin0", "fin1", "fin2", "fin3", "pitch_deg", "roll_deg",
+    "ax_g", "ay_g", "az_g", "gx_dps", "gy_dps", "gz_dps",
     "state", "tilt_cmd_deg",
+    # Appended by the HIL bridge: peripheral/pin status and fault telemetry.
+    "pwm_en", "pwm0", "pwm1", "pwm2", "pwm3",
+    "pwm0_us", "pwm1_us", "pwm2_us", "pwm3_us",
+    "i2c_busy", "spi_busy", "sd_cs_n", "usart_tx", "usart_rx",
+    "status_led", "arm_gpio", "arm_led", "fault_led",
+    "fault_code", "sensor_faults",
 )
 PLANT_FIELDS = (
-    "alt_m", "vz_mps", "pitch_deg", "roll_deg", "az_g",
+    "alt_m", "vz_mps", "pitch_deg", "roll_deg", "yaw_deg", "az_g",
     "drag_n", "thrust_n", "M_pitch_nm", "q_ratio", "fw_state",
+    "mass_kg", "dCd_cfd",
+    # Transient actuator state: 50 Hz latched command vs actual fin angle.
+    "fin_cmd_deg0", "fin_cmd_deg1", "fin_cmd_deg2", "fin_cmd_deg3",
+    "fin_act_deg0", "fin_act_deg1", "fin_act_deg2", "fin_act_deg3",
+    "fin_rate_dps0", "fin_rate_dps1", "fin_rate_dps2", "fin_rate_dps3",
+    "fw_fin_deg0", "fw_fin_deg1", "fw_fin_deg2", "fw_fin_deg3",
 )
 
 

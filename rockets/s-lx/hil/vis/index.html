@@ -13,10 +13,10 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
-         font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
-           padding: 14px 20px; border-bottom: 1px solid var(--line); }
-  h1 { font-size: 16px; margin: 0; letter-spacing: .04em; }
+         font: 13px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  header { display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+           padding: 12px 20px; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 15px; margin: 0; letter-spacing: .04em; }
   .pill { padding: 4px 10px; border-radius: 999px; font-weight: 700;
           background: #1d2a3a; border: 1px solid var(--line); }
   .pill[data-s="4"] { color: var(--accent); border-color: #2f7d63; }
@@ -27,30 +27,42 @@
   .dot.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
   .spacer { flex: 1; }
   label { color: var(--muted); }
-  input { width: 90px; background: var(--panel); color: var(--text);
+  input { width: 88px; background: var(--panel); color: var(--text);
           border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
-  main { padding: 16px 20px 40px; }
-  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-           gap: 10px; margin-bottom: 18px; }
+  main { padding: 14px 20px 40px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+           gap: 10px; margin-bottom: 14px; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-          padding: 10px 12px; }
-  .card .k { color: var(--muted); font-size: 11px; text-transform: uppercase; }
-  .card .v { font-size: 20px; font-weight: 700; margin-top: 4px; }
-  .card .u { color: var(--muted); font-size: 11px; font-weight: 400; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+          padding: 9px 11px; }
+  .card .k { color: var(--muted); font-size: 10px; text-transform: uppercase; }
+  .card .v { font-size: 19px; font-weight: 700; margin-top: 4px; }
+  .card .u { color: var(--muted); font-size: 10px; font-weight: 400; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(430px, 1fr));
           gap: 14px; }
   .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-           padding: 12px 14px; }
-  .panel h2 { font-size: 12px; color: var(--muted); margin: 0 0 8px;
+           padding: 12px 14px; min-width: 0; }
+  .panel h2 { font-size: 11px; color: var(--muted); margin: 0 0 9px;
               text-transform: uppercase; letter-spacing: .06em; }
-  canvas { width: 100%; height: 200px; display: block; }
-  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; font-size: 11px;
+  canvas { width: 100%; height: 190px; display: block; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 6px; font-size: 10px;
             color: var(--muted); }
   .legend i { display: inline-block; width: 14px; height: 3px; vertical-align: middle;
               margin-right: 5px; border-radius: 2px; }
-  .events { max-height: 220px; overflow: auto; font-size: 12px; }
+  .kv { display: grid; grid-template-columns: 1fr auto; gap: 3px 12px; font-size: 12px; }
+  .kv .k { color: var(--muted); }
+  .kv .v { text-align: right; }
+  .pins { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 6px; }
+  .pin { display: flex; align-items: center; gap: 7px; padding: 5px 7px;
+         border: 1px solid var(--line); border-radius: 6px; background: #0f1620; font-size: 11px; }
+  .pin .led { width: 8px; height: 8px; border-radius: 50%; background: #344256; flex: none; }
+  .pin.on .led { background: var(--accent); box-shadow: 0 0 7px var(--accent); }
+  .pin.warn .led { background: var(--amber); box-shadow: 0 0 7px var(--amber); }
+  .pin .name { color: var(--muted); }
+  .pin .val { margin-left: auto; font-weight: 700; }
+  .events { max-height: 190px; overflow: auto; font-size: 11px; }
   .events div { padding: 3px 0; border-bottom: 1px solid #1c2635; }
   .events .t { color: var(--muted); }
+  .note { color: var(--muted); font-size: 10px; margin-top: 7px; }
 </style>
 </head>
 <body>
@@ -65,34 +77,47 @@
 <main>
   <div class="cards" id="cards"></div>
   <div class="grid">
+    <div class="panel"><h2>Rocket state / sensors</h2><div class="kv" id="stateDetail"></div></div>
+    <div class="panel"><h2>Pins &amp; peripherals</h2><div class="pins" id="pins"></div>
+      <div class="note">Status is sampled from the Verilated peripheral registers. PWM pins show the latched PCA9685 pulse width; bus pins show activity, not bit-level waveforms.</div>
+    </div>
+    <div class="panel"><h2>Actuator: command → actual</h2><canvas id="c-act"></canvas>
+      <div class="legend" id="l-act"></div><div class="kv" id="actDetail"></div>
+    </div>
     <div class="panel"><h2>Altitude</h2><canvas id="c-alt"></canvas>
       <div class="legend" id="l-alt"></div></div>
-    <div class="panel"><h2>Fin commands (deg)</h2><canvas id="c-fin"></canvas>
-      <div class="legend" id="l-fin"></div></div>
     <div class="panel"><h2>Attitude (deg)</h2><canvas id="c-att"></canvas>
       <div class="legend" id="l-att"></div></div>
-    <div class="panel"><h2>Axial acceleration (g)</h2><canvas id="c-acc"></canvas>
+    <div class="panel"><h2>Acceleration (g)</h2><canvas id="c-acc"></canvas>
       <div class="legend" id="l-acc"></div></div>
-    <div class="panel"><h2>Flight state transitions</h2><div class="events" id="events"></div></div>
     <div class="panel"><h2>Dynamics</h2><canvas id="c-dyn"></canvas>
       <div class="legend" id="l-dyn"></div></div>
+    <div class="panel"><h2>Flight state transitions</h2><div class="events" id="events"></div></div>
   </div>
 </main>
 <script>
 const STATES = ['BOOT','ARMED','READY','LAUNCH','GUIDED','DESCENT','LANDED','FAULT'];
+const FAULTS = ['none','SD init','log open','PCA9685 init','BMP280 init','ICM20689 init','sensor read'];
 const COLORS = {
-  alt: '#6ee7b7', ref: '#fbbf24', pred: '#c084fc',
-  fin0: '#60a5fa', fin1: '#f87171', fin2: '#fbbf24', fin3: '#c084fc',
-  pitch: '#60a5fa', roll: '#f87171', ax: '#60a5fa', ay: '#fbbf24', az: '#6ee7b7',
+  alt: '#6ee7b7', plantAlt: '#2f7d63', pred: '#c084fc', ref: '#fbbf24',
+  cmd: '#60a5fa', act: '#6ee7b7', latch: '#c084fc',
+  pitch: '#60a5fa', roll: '#f87171', yaw: '#c084fc',
+  ax: '#60a5fa', ay: '#fbbf24', az: '#6ee7b7',
   drag: '#f87171', thrust: '#6ee7b7', moment: '#c084fc'
 };
 let lastRun = '', lastStride = 0;
 
-function fmt(v, d=2) { return Number(v || 0).toFixed(d); }
+function fmt(v, d=2) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n.toFixed(d) : '—';
+}
+function kv(rows) {
+  return rows.map(([k,v]) => `<div class="k">${k}</div><div class="v">${v}</div>`).join('');
+}
 
 function cards(d) {
   const b = d.bridge.latest || {}, p = d.plant.latest || {}, r = d.run || {};
-  const s = d.bridge.series || {}, ps = d.plant.series || {};
+  const s = d.bridge.series || {};
   const t = s.t && s.t.length ? s.t[s.t.length - 1] : 0;
   const items = [
     ['state', STATES[b.state|0] || 'BOOT', ''],
@@ -102,7 +127,8 @@ function cards(d) {
     ['predicted apogee', fmt(b.pred_apo_m, 1), 'm'],
     ['reference apogee', r.apogee_m != null ? fmt(r.apogee_m,1) : '—', 'm'],
     ['pitch / roll', fmt(b.pitch_deg,1)+' / '+fmt(b.roll_deg,1), 'deg'],
-    ['fins', [0,1,2,3].map(i=>fmt(b['fin'+i],1)).join(' / '), 'deg'],
+    ['fin cmd / act', fmt((b.fin0+b.fin1+b.fin2+b.fin3)/4,1)+' / '+
+      fmt((p.fin_act_deg0+p.fin_act_deg1+p.fin_act_deg2+p.fin_act_deg3)/4,1), 'deg'],
     ['axial accel', fmt(b.az_g,2), 'g'],
     ['frames', (d.meta.bridge_rows||0), '']
   ];
@@ -111,24 +137,96 @@ function cards(d) {
   ).join('');
 }
 
-function draw(canvasId, legendId, series, x, defs, fixedMax) {
+function renderState(d) {
+  const b = d.bridge.latest || {}, p = d.plant.latest || {}, r = d.run || {};
+  const act = r.actuator || {};
+  document.getElementById('stateDetail').innerHTML = kv([
+    ['flight state', STATES[b.state|0] || 'BOOT'],
+    ['fault', FAULTS[b.fault_code|0] || `code ${b.fault_code|0}`],
+    ['sensor read failures', b.sensor_faults|0],
+    ['arm input', b.arm_gpio ? 'CLOSED' : 'OPEN'],
+    ['baro altitude', fmt(b.alt_m, 1)+' m'],
+    ['plant altitude', fmt(p.alt_m, 1)+' m'],
+    ['vertical speed', fmt(b.vv_ms, 2)+' m/s'],
+    ['reference alt / vv', fmt(b.ref_alt_m,1)+' / '+fmt(b.ref_vv_ms,1)],
+    ['predicted apogee', fmt(b.pred_apo_m, 1)+' m'],
+    ['tilt command', fmt(b.tilt_cmd_deg, 2)+' deg'],
+    ['dynamic pressure', fmt(p.q_ratio, 2)+' × Qref'],
+    ['mass / thrust / drag', fmt(p.mass_kg,3)+' kg / '+fmt(p.thrust_n,1)+' / '+fmt(p.drag_n,1)+' N'],
+    ['pitch moment', fmt(p.M_pitch_nm, 4)+' N·m'],
+    ['servo model', `${fmt(act.pwm_hz,0)} Hz latch · ${fmt(act.tau_s,3)} s lag · ${fmt(act.rate_limit_dps,0)} °/s`]
+  ]);
+}
+
+function pin(pinName, label, on, value, warn=false) {
+  return `<div class="pin ${warn ? 'warn' : on ? 'on' : ''}">`+
+         `<span class="led"></span><span class="name">${pinName} ${label}</span>`+
+         `<span class="val">${value}</span></div>`;
+}
+
+function renderPins(d) {
+  const b = d.bridge.latest || {};
+  const pwmOn = !!b.pwm_en;
+  const pwmPins = [0,1,2,3].map(i =>
+    pin(`PWM${i}`, '(PCA9685)', pwmOn && !!b['pwm'+i], fmt(b['pwm'+i+'_us'],0)+' µs'));
+  const items = [
+    pin('PB6', 'I2C1_SCL', !!b.i2c_busy, 'active'),
+    pin('PB7', 'I2C1_SDA', !!b.i2c_busy, 'active'),
+    pin('PA5', 'SPI1_SCK', !!b.spi_busy, 'active'),
+    pin('PA6', 'SPI1_MISO', !!b.spi_busy, 'active'),
+    pin('PA7', 'SPI1_MOSI', !!b.spi_busy, 'active'),
+    pin('PA4', 'SD_CS#', b.sd_cs_n === 0, b.sd_cs_n === 0 ? 'asserted' : 'idle'),
+    pin('PA9', 'USART1_TX', !!b.usart_tx, 'active'),
+    pin('PA10','USART1_RX', !!b.usart_rx, b.usart_rx ? 'idle high' : 'active'),
+    pin('PA0', 'ARM_IN', !!b.arm_gpio, b.arm_gpio ? 'closed' : 'open'),
+    pin('PC13','STATUS_LED', !!b.status_led, b.status_led ? 'on' : 'off'),
+    ...pwmPins,
+    pin('FAULT','LATCH', !!b.fault_led,
+        FAULTS[b.fault_code|0] || `code ${b.fault_code|0}`, !!b.fault_led)
+  ];
+  document.getElementById('pins').innerHTML = items.join('');
+}
+
+function renderActuator(d) {
+  const p = d.plant.latest || {};
+  document.getElementById('actDetail').innerHTML = kv([
+    ['guidance output', [0,1,2,3].map(i=>fmt(d.bridge.latest['fin'+i],1)).join(' / ')+' deg'],
+    ['50 Hz latched cmd', [0,1,2,3].map(i=>fmt(p['fin_cmd_deg'+i],1)).join(' / ')+' deg'],
+    ['actual fin angle', [0,1,2,3].map(i=>fmt(p['fin_act_deg'+i],1)).join(' / ')+' deg'],
+    ['fin slew rate', [0,1,2,3].map(i=>fmt(p['fin_rate_dps'+i],0)).join(' / ')+' °/s'],
+    ['PWM pulse widths', [0,1,2,3].map(i=>fmt(d.bridge.latest['pwm'+i+'_us'],0)).join(' / ')+' µs']
+  ]);
+}
+
+// Draw a chart. Each series supplies its own x array so bridge (firmware) and
+// plant (physics) traces can share one plot without time-base assumptions.
+function draw(canvasId, legendId, defs, opts={}) {
   const cv = document.getElementById(canvasId), ctx = cv.getContext('2d');
   const rect = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
-  cv.width = rect.width*dpr; cv.height = rect.height*dpr;
+  cv.width = Math.max(1, Math.floor(rect.width*dpr));
+  cv.height = Math.max(1, Math.floor(rect.height*dpr));
   ctx.setTransform(dpr,0,0,dpr,0,0);
-  const w = rect.width, h = rect.height, pad = {l:44,r:8,t:8,b:20};
+  const w = rect.width, h = rect.height, pad = {l:46,r:8,t:8,b:20};
   ctx.clearRect(0,0,w,h);
   ctx.fillStyle = '#0f1620'; ctx.fillRect(0,0,w,h);
-  const n = (x && x.length) || 0;
-  let xmax = n ? x[n-1] : 1, lo = 0, hi = fixedMax || 1;
-  if (!fixedMax) {
-    for (const def of defs) for (const v of (series[def.key]||[])) {
+  let xmax = opts.xmax || 0;
+  for (const def of defs) {
+    const x = def.x || [];
+    if (x.length) xmax = Math.max(xmax, x[x.length-1]);
+  }
+  let lo = opts.lo, hi = opts.hi;
+  if (lo === undefined || hi === undefined) {
+    lo = Infinity; hi = -Infinity;
+    for (const def of defs) for (const v of (def.vals||[])) {
+      if (!Number.isFinite(v)) continue;
       if (v < lo) lo = v; if (v > hi) hi = v;
     }
+    if (!Number.isFinite(lo)) { lo = 0; hi = 1; }
+    if (opts.zeroBase) lo = Math.min(0, lo);
     if (hi - lo < 1e-6) hi = lo + 1;
   }
-  const sx = v => pad.l + (xmax > 0 ? v/xmax : 0)*(w-pad.l-pad.r);
-  const sy = v => h-pad.b - ((v-lo)/(hi-lo))*(h-pad.t-pad.b);
+  const sx = (xv) => pad.l + (xmax > 0 ? xv/xmax : 0)*(w-pad.l-pad.r);
+  const sy = (v) => h-pad.b - ((v-lo)/(hi-lo))*(h-pad.t-pad.b);
   ctx.strokeStyle = '#223044'; ctx.fillStyle = '#8092a6'; ctx.lineWidth = 1;
   ctx.font = '10px ui-monospace, monospace';
   for (let i=0;i<=4;i++) {
@@ -138,14 +236,17 @@ function draw(canvasId, legendId, series, x, defs, fixedMax) {
   }
   ctx.fillText(fmt(xmax,0), w-pad.r-24, h-5);
   for (const def of defs) {
-    const vals = series[def.key] || [];
-    ctx.strokeStyle = def.color; ctx.lineWidth = 1.5; ctx.beginPath();
+    const vals = def.vals || [], x = def.x || [];
+    ctx.strokeStyle = def.color; ctx.lineWidth = def.width || 1.5;
+    if (def.dash) ctx.setLineDash(def.dash); else ctx.setLineDash([]);
+    ctx.beginPath();
     for (let i=0;i<vals.length;i++) {
-      const px = sx(x[i]||0), py = sy(vals[i]);
+      const px = sx(x[i] || 0), py = sy(vals[i]);
       if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
     }
     ctx.stroke();
   }
+  ctx.setLineDash([]);
   document.getElementById(legendId).innerHTML = defs.map(def =>
     `<span><i style="background:${def.color}"></i>${def.label}</span>`).join('');
 }
@@ -153,22 +254,36 @@ function draw(canvasId, legendId, series, x, defs, fixedMax) {
 function charts(d) {
   const b = d.bridge.series || {}, p = d.plant.series || {};
   const bt = (b.t||[]).map(v=>v/1000), pt = p.t||[];
-  draw('c-alt','l-alt', b, bt,
-    [{key:'alt_m',label:'altitude (firmware)',color:COLORS.alt},
-     {key:'pred_apo_m',label:'predicted apogee',color:COLORS.pred}]);
-  draw('c-fin','l-fin', b, bt, [0,1,2,3].map(i =>
-    ({key:'fin'+i,label:'fin'+i,color:COLORS['fin'+i]})), 16);
-  draw('c-att','l-att', b, bt,
-    [{key:'pitch_deg',label:'pitch',color:COLORS.pitch},
-     {key:'roll_deg',label:'roll',color:COLORS.roll}]);
-  draw('c-acc','l-acc', b, bt,
-    [{key:'az_g',label:'az',color:COLORS.az},
-     {key:'ax_g',label:'ax',color:COLORS.ax},
-     {key:'ay_g',label:'ay',color:COLORS.ay}]);
-  draw('c-dyn','l-dyn', p, pt,
-    [{key:'thrust_n',label:'thrust',color:COLORS.thrust},
-     {key:'drag_n',label:'drag',color:COLORS.drag},
-     {key:'M_pitch_nm',label:'pitch moment',color:COLORS.moment}]);
+  draw('c-alt','l-alt', [
+    {x:bt, vals:b.alt_m, label:'altitude (firmware)', color:COLORS.alt},
+    {x:pt, vals:p.alt_m, label:'altitude (plant)', color:COLORS.plantAlt, width:1},
+    {x:bt, vals:b.pred_apo_m, label:'predicted apogee', color:COLORS.pred, dash:[4,3]},
+    {x:bt, vals:b.ref_alt_m, label:'reference', color:COLORS.ref, dash:[2,3]}
+  ], {zeroBase:true});
+  const actDefs = [];
+  for (let i=0;i<4;i++) {
+    actDefs.push({x:bt, vals:b['fin'+i], label:`cmd${i}`, color:COLORS.cmd});
+    actDefs.push({x:pt, vals:p['fin_cmd_deg'+i], label:`latched${i}`,
+                  color:COLORS.latch, dash:[3,2], width:1});
+    actDefs.push({x:pt, vals:p['fin_act_deg'+i], label:`actual${i}`,
+                  color:COLORS.act, width:2});
+  }
+  draw('c-act','l-act', actDefs, {zeroBase:true});
+  draw('c-att','l-att', [
+    {x:bt, vals:b.pitch_deg, label:'pitch (firmware)', color:COLORS.pitch},
+    {x:bt, vals:b.roll_deg, label:'roll (firmware)', color:COLORS.roll},
+    {x:pt, vals:p.yaw_deg, label:'yaw (plant)', color:COLORS.yaw, dash:[3,2]}
+  ], {zeroBase:false});
+  draw('c-acc','l-acc', [
+    {x:bt, vals:b.az_g, label:'az', color:COLORS.az},
+    {x:bt, vals:b.ax_g, label:'ax', color:COLORS.ax},
+    {x:bt, vals:b.ay_g, label:'ay', color:COLORS.ay}
+  ], {zeroBase:false});
+  draw('c-dyn','l-dyn', [
+    {x:pt, vals:p.thrust_n, label:'thrust', color:COLORS.thrust},
+    {x:pt, vals:p.drag_n, label:'drag', color:COLORS.drag},
+    {x:pt, vals:p.M_pitch_nm, label:'pitch moment', color:COLORS.moment}
+  ], {zeroBase:true});
   const ev = (d.events||[]).slice(-30).reverse().map(e =>
     `<div><span class="t">${fmt(e.t_s,2)}s</span> `+
     `${STATES[e.from]||'—'} → <b>${STATES[e.to]||e.to}</b> @ ${fmt(e.alt_m,1)}m</div>`).join('');
@@ -183,15 +298,15 @@ async function poll() {
     const res = await fetch(`/api/state?run=${encodeURIComponent(run)}&stride=${stride}`);
     if (!res.ok) throw new Error(res.status);
     const d = await res.json();
-    const st = d.bridge.latest.state|0;
     const pill = document.getElementById('state');
-    pill.textContent = STATES[st]||'BOOT'; pill.dataset.s = st;
+    pill.textContent = STATES[d.bridge.latest.state|0] || 'BOOT';
+    pill.dataset.s = d.bridge.latest.state|0;
     const age = d.meta.server_time - d.meta.bridge_mtime;
     const live = age < 3 && d.meta.bridge_rows > 1;
     document.getElementById('dot').classList.toggle('on', live);
     document.getElementById('liveText').textContent =
       d.meta.bridge_rows ? (live ? 'live' : `last frame ${age.toFixed(0)}s ago`) : 'waiting for logs';
-    cards(d); charts(d);
+    cards(d); renderState(d); renderPins(d); renderActuator(d); charts(d);
   } catch (e) {
     document.getElementById('liveText').textContent = 'server error: '+e.message;
   }

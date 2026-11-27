@@ -27,6 +27,13 @@ extern "C" {
 static const char *SENSOR_NAME = SLX_HIL_SENSORS_NAME;
 static const char *FINS_NAME = SLX_HIL_FINS_NAME;
 
+/* The firmware CSV schema stays unchanged. The HIL bridge appends pin/peripheral
+ * telemetry after it so the GUI can show which outputs are actually active. */
+static const char *HIL_EXTRA_CSV_HEADER =
+    ",pwm_en,pwm0,pwm1,pwm2,pwm3,pwm0_us,pwm1_us,pwm2_us,pwm3_us,"
+    "i2c_busy,spi_busy,sd_cs_n,usart_tx,usart_rx,status_led,"
+    "arm_gpio,arm_led,fault_led,fault_code,sensor_faults";
+
 static void *map_shm(const char *name, size_t size)
 {
     int fd = shm_open(name, O_RDWR | O_CREAT, 0600);
@@ -63,7 +70,8 @@ static void write_fins(slx_hil_fins_t *shm, double t_s,
         shm->fin_act_deg[i] = act[i];
     }
     shm->state = (uint32_t)state;
-    shm->flags = SLX_HIL_FLAG_RUNNING;
+    shm->flags = SLX_HIL_FLAG_RUNNING |
+                 (state == SLX_STATE_FAULT ? SLX_HIL_FLAG_FAULT : 0U);
     __atomic_thread_fence(__ATOMIC_RELEASE);
     __atomic_store_n(&shm->seq, seq + 2, __ATOMIC_RELEASE);
 }
@@ -118,7 +126,9 @@ int main(int argc, char **argv)
     dut->rst = 1; dut->clk = 0; dut->eval();
     dut->clk = 1; dut->eval();
     dut->rst = 0; dut->clk = 0; dut->eval();
-    write_reg_double(dut, 0x00, 1.0); // enable PWM outputs
+    // Raw control bits: PWM enable, SPI/SD logging, I2C activity, USART TX.
+    // Writing a double here would set the IEEE-754 mantissa instead of bit0.
+    reg_write(dut, 0x00, 0x0fU);
 
     slx_guidance_t g;
     slx_guidance_init(&g);
@@ -128,7 +138,7 @@ int main(int argc, char **argv)
     FILE *log = fopen(log_path, "w");
     if (!log) { perror("fopen"); return 1; }
     setvbuf(log, nullptr, _IONBF, 0); // the GUI tails this file while running
-    fprintf(log, "%s\n", SLX_CSV_HEADER);
+    fprintf(log, "%s%s\n", SLX_CSV_HEADER, HIL_EXTRA_CSV_HEADER);
 
     bool sea_level_set = false;
     bool armed = false;
@@ -137,6 +147,8 @@ int main(int argc, char **argv)
     uint64_t last_t_ms = 0;
     uint64_t waits = 0;
     uint64_t dups = 0;
+    double servo_us[4] = { SLX_SERVO_CENTER_US, SLX_SERVO_CENTER_US,
+                           SLX_SERVO_CENTER_US, SLX_SERVO_CENTER_US };
 
     for (;;) {
         slx_hil_sensors_t s;
@@ -207,15 +219,44 @@ int main(int argc, char **argv)
                         snap.fins_deg[i] * (600.0 / SLX_MAX_FIN_DEG);
             if (us < SLX_SERVO_MIN_US) us = SLX_SERVO_MIN_US;
             if (us > SLX_SERVO_MAX_US) us = SLX_SERVO_MAX_US;
-            write_reg_double(dut, (uint8_t)(0x30 + i), us);
+            servo_us[i] = us;
+            // pwm_cmp[] is a raw 16-bit microsecond count, not an IEEE-754 word.
+            reg_write(dut, (uint8_t)(0x30 + i), (uint64_t)us);
         }
+        // Discrete pin states exposed to the GUI: arm input and fault latch.
+        reg_write(dut, 0x38, armed ? 1U : 0U);
+        reg_write(dut, 0x39, (uint64_t)g.fault);
         dut->clk = 0; dut->eval(); dut->clk = 1; dut->eval();
 
         write_fins(fins, s.t_s, snap.fins_deg, snap.fins_deg, snap.state);
 
-        char row[512];
-        slx_format_csv_row(row, sizeof(row), &snap, 3.9f);
-        fprintf(log, "%s", row);  /* the formatter already emits CRLF */
+        char row[640];
+        size_t row_len = slx_format_csv_row(row, sizeof(row), &snap, 3.9f);
+        if (row_len >= 2U && row[row_len - 2U] == '\r' &&
+                row[row_len - 1U] == '\n') {
+            row[row_len - 2U] = '\0';  /* strip CRLF; append HIL telemetry */
+        }
+        fprintf(log,
+                "%s,%u,%u,%u,%u,%u,%.2f,%.2f,%.2f,%.2f,"
+                "%u,%u,%u,%u,%u,%u,%u,%u,%u,%u,%u\r\n",
+                row,
+                (unsigned)(dut->pwm_en ? 1 : 0),
+                (unsigned)((dut->pwm >> 0) & 1U),
+                (unsigned)((dut->pwm >> 1) & 1U),
+                (unsigned)((dut->pwm >> 2) & 1U),
+                (unsigned)((dut->pwm >> 3) & 1U),
+                servo_us[0], servo_us[1], servo_us[2], servo_us[3],
+                (unsigned)(dut->i2c_busy ? 1 : 0),
+                (unsigned)(dut->spi_busy ? 1 : 0),
+                (unsigned)(dut->sd_cs_n ? 1 : 0),
+                (unsigned)(dut->usart_tx ? 1 : 0),
+                (unsigned)(dut->usart_rx ? 1 : 0),
+                (unsigned)(dut->status_led ? 1 : 0),
+                (unsigned)(dut->arm_gpio ? 1 : 0),
+                (unsigned)(dut->arm_led ? 1 : 0),
+                (unsigned)(dut->fault_led ? 1 : 0),
+                (unsigned)g.fault,
+                (unsigned)g.sensor_faults);
         ticks++;
 
         if (snap.state == SLX_STATE_LANDED || snap.state == SLX_STATE_FAULT)

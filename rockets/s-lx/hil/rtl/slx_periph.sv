@@ -13,12 +13,25 @@ module slx_periph (
     output logic [63:0]      rdata,
     output logic [3:0]       pwm,
     output logic             arm_led,
-    output logic             fault_led
+    output logic             fault_led,
+    // Live peripheral/pin status mirrored into the bridge CSV for the GUI.
+    output logic             pwm_en,
+    output logic             i2c_busy,
+    output logic             spi_busy,
+    output logic             sd_cs_n,
+    output logic             usart_tx,
+    output logic             usart_rx,
+    output logic             status_led,
+    output logic             arm_gpio,
+    output logic [7:0]       fault_code
 );
     localparam logic [63:0] ZERO = 64'd0;
 
     // Register map (one 64-bit word each):
-    //   0x00 control/status, 0x10 alt_m, 0x11 pressure_pa,
+    //   0x00 control/status:
+    //        bit0 PWM enable, bit1 SPI/SD logging, bit2 I2C activity,
+    //        bit3 USART TX activity
+    //   0x10 alt_m, 0x11 pressure_pa,
     //   0x12..0x14 velocity xyz, 0x15..0x17 attitude pitch/roll/yaw,
     //   0x18..0x1a rates, 0x1b..0x1d accel g, 0x1e..0x20 gyro dps,
     //   0x21 q_ratio, 0x30..0x33 servo pulse width in microseconds,
@@ -39,26 +52,30 @@ module slx_periph (
         rdata = regs[addr[5:0]];
     end
 
-    // 20 ms servo period at a 1 MHz register clock: 0..20000 counts.
-    logic [15:0] pwm_count;
+    // Servo pulse widths are held in microseconds. The bridge samples at
+    // 100 Hz, so pwm[] reports channel enable/valid-pulse state rather than an
+    // instantaneous 1 MHz comparator level (which would alias badly).
     logic [15:0] pwm_cmp [0:3];
-    always_ff @(posedge clk or posedge rst) begin
-        if (rst)
-            pwm_count <= 16'd0;
-        else if (pwm_count >= 16'd19999)
-            pwm_count <= 16'd0;
-        else
-            pwm_count <= pwm_count + 16'd1;
-    end
 
     genvar g;
     generate
         for (g = 0; g < 4; g = g + 1) begin : gen_servo
-            assign pwm_cmp[g] = regs[8'h30 + g][15:0];
-            assign pwm[g] = (pwm_count < pwm_cmp[g]) && regs[8'h00][0];
+            assign pwm_cmp[g] = regs[6'h30 + g][15:0];
+            assign pwm[g] = regs[6'h00][0] &&
+                            (pwm_cmp[g] >= 16'd900) && (pwm_cmp[g] <= 16'd2100);
         end
     endgenerate
 
-    assign arm_led   = regs[8'h38][0];
-    assign fault_led = (regs[8'h39] != ZERO);
+    assign arm_led    = regs[6'h38][0];
+    assign fault_led  = (regs[6'h39] != ZERO);
+
+    assign pwm_en     = regs[6'h00][0];
+    assign i2c_busy   = regs[6'h00][2];
+    assign spi_busy   = regs[6'h00][1];
+    assign sd_cs_n    = ~regs[6'h00][1];   // active low while logging
+    assign usart_tx   = regs[6'h00][3];
+    assign usart_rx   = 1'b1;              // idle high; flight has no RX command
+    assign arm_gpio   = regs[6'h38][0];
+    assign fault_code = regs[6'h39][7:0];
+    assign status_led = pwm_en && (fault_code == 8'd0);
 endmodule

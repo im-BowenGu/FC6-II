@@ -97,11 +97,11 @@ CUDA GPU. No check compares this repository's README to any upstream ref.
 
 The simulator check prints all eight modes and asserts:
 
-* nominal guided apogee **231.34 m / 35.50 s**, inside 229 ± 5 m and 34–37 s;
-* 0.35 sensor noise: 231.43 m / 35.51 s;
-* 5° rail-exit tilt: 228.97 m / 35.21 s, burnout error ≈0.98°, 1° band at
-  0.84 s, coast fin ≤8.9°;
-* steady 5 m/s wind: 232.36 m, no fin saturation.
+* nominal guided apogee **231.29 m / 35.49 s**, inside 229 ± 5 m and 34–37 s;
+* 0.35 sensor noise: 231.37 m / 35.50 s;
+* 5° rail-exit tilt: 228.94 m / 35.21 s, burnout error ≈0.98°, 1° band at
+  0.82 s, coast fin ≤8.9°;
+* steady 5 m/s wind: 232.34 m, no fin saturation.
 
 These are regression bounds on the coupled static-CFD/OpenRocket surrogate,
 **not** flight qualification.
@@ -118,6 +118,21 @@ make -C rockets/s-lx/hil build   # Verilate RTL + build bridge (needs Verilator)
 make -C rockets/s-lx/hil run     # full 100 Hz flight, lockstep over shm
 make -C rockets/s-lx/hil vis     # browser GUI at http://127.0.0.1:8765
 ```
+
+The GUI (`hil/vis/`) is a stdlib-only HTTP dashboard. It shows flight state,
+faults, sensor/trajectory estimates, dynamics, state-transition events, the
+50 Hz latched fin command next to the actual fin angle, PWM pulse widths and a
+live pin/peripheral panel (I2C, SPI/SD CS, USART, ARM input, status LED, four
+PCA9685 channels). Bridge and plant logs are tailed while a run is in progress;
+the GUI never attaches to shared memory itself.
+
+Servo switching is **not** instantaneous in either simulator: the guidance
+command is latched at the PCA9685's 50 Hz frame rate, slewed at 300 °/s and
+passed through a 35 ms first-order lag before the recorded CFD lookup is
+evaluated with the actual fin angles. Running the Taichi LBM solver inside the
+100 Hz loop would not be physically meaningful at this fidelity (steady-state
+force coefficients, no moving boundary) and would break the flight deadline;
+the GPU sweep remains an offline calibration step feeding the transient plant.
 
 `hil/wokwi/` adds two local-only Wokwi projects: a runnable STM32 smoke test
 that links the unchanged guidance core (`make -C rockets/s-lx/hil wokwi-stm32`,
