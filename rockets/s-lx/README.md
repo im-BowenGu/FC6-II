@@ -17,6 +17,7 @@ stack in the main rocket project is untouched.
 | `model.yaml` | rough model manifest: dimensions, motor, target, aero inputs, CAD references |
 | `cad/`, `cfd/` | OpenRocket models, fin STL, movable-fin state table and Taichi/CUDA sweep driver |
 | `sim/` | self-contained 100 Hz firmware-in-the-loop trajectory surrogate |
+| `vis-rust/` | dependency-free Rust Xwayland window: real HIL GPIO, Taichi CFD streamlines and rocket STL |
 | `Makefile` | `make ci` = offline host tests + local CI checks; `make ci-live` = live fin-state CFD + recorded-motion replay |
 | `ci/run-local.sh` | standalone local CI entry point; no GitHub Actions, no PR gate |
 
@@ -133,6 +134,39 @@ dynamics, state-transition events, the guidance output next to its delayed and
 pulse widths and a live pin/peripheral panel (I2C, SPI/SD CS, USART, ARM input,
 status LED, four PCA9685 channels). Bridge and plant logs are tailed while a
 run is in progress; the GUI never attaches to shared memory itself.
+
+### Native CFD/HIL window (Rust, no crates)
+
+`vis-rust/` is a dependency-free Rust X11 client. It opens a **real Xwayland
+window** (raw X11 wire protocol over `/tmp/.X11-unix/X0`, CPU framebuffer
+uploaded with `PutImage`) and composites three live data sources:
+
+* **GPIO / flight state** — tailed directly from `hil/logs/bridge.csv`. Column
+  names are matched exactly; the status LEDs show real pin bits from the
+  Verilated peripheral (including the RTL's free-running status-LED divider).
+  Without `--replay` the viewer starts at the current end of the log and
+  follows a fresh HIL run in real time; `--replay` reads the whole log.
+* **CFD streamlines** — RK2-traced through Taichi/CUDA macroscopic velocity
+  slices in `build/cfd/fields/`, selecting the slice nearest the current
+  *actual* fin angles. These are steady-state slices, not a 100 Hz solve.
+* **Rocket geometry** — the binary STL at `cfd/fluidx3d/S-LX_cfd.stl`, with fins
+  deflected approximately about their radial hinges using those same angles.
+
+```sh
+make -C rockets/s-lx cfd-fields          # regenerate 8 real Taichi velocity slices + motion.json
+make -C rockets/s-lx vis-rust            # offline cargo build via nix-shell
+make -C rockets/s-lx vis-rust-run VIS_ARGS=--replay
+make -C rockets/s-lx vis-rust-run VIS_ARGS='--hold --print-rows'
+```
+
+Useful binary flags: `--log PATH`, `--stl PATH`, `--fields DIR`, `--motion PATH`,
+`--fps N`, `--replay`, `--hold`, `--print-rows`, and
+`--snapshot PPM [--snapshot-after SECS]`. The PPM is the **exact framebuffer
+uploaded to X**, so it can be inspected without an X screenshot tool.
+`--hold` ignores key presses (handy while a long HIL run is producing rows);
+otherwise any key in the window quits. `SLX_X_DEBUG=1` prints X11 request and
+error diagnostics. The visualiser is a viewer only: it never writes telemetry
+or shared memory.
 
 Servo switching is **not** instantaneous in either simulator: each guidance
 command waits 10 ms (one 100 Hz tick) before reaching the PCA9685 input, is

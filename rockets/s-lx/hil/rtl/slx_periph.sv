@@ -39,12 +39,20 @@ module slx_periph (
     logic [63:0] regs [0:63];
     integer i;
 
+    // Free-running status-LED divider. The bridge clocks this model at the
+    // 100 Hz telemetry rate, so bit 6 gives a visible ~1.5 Hz blink without
+    // affecting the guidance path.
+    logic [31:0] blink_div;
+
     always_ff @(posedge clk or posedge rst) begin
         if (rst) begin
+            blink_div <= 32'd0;
             for (i = 0; i < 64; i = i + 1)
                 regs[i] <= ZERO;
-        end else if (wr && valid) begin
-            regs[addr[5:0]] <= wdata;
+        end else begin
+            blink_div <= blink_div + 32'd1;
+            if (wr && valid)
+                regs[addr[5:0]] <= wdata;
         end
     end
 
@@ -77,5 +85,5 @@ module slx_periph (
     assign usart_rx   = 1'b1;              // idle high; flight has no RX command
     assign arm_gpio   = regs[6'h38][0];
     assign fault_code = regs[6'h39][7:0];
-    assign status_led = pwm_en && (fault_code == 8'd0);
+    assign status_led = pwm_en && (fault_code == 8'd0) && blink_div[6];
 endmodule

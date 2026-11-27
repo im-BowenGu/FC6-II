@@ -28,7 +28,14 @@ MOTION := $(BUILD)/cfd/motion.json
 #   make cfd-record CFD_ARGS="--configs neutral,pitch_p15 --steps 2000"
 CFD_ARGS ?=
 
-.PHONY: all test ci ci-live host-test model-check sim-check verify cfd-record cfd-test clean
+# Dependency-free Rust X11 visualiser (real Xwayland window). Rust is not on
+# PATH by default here, so build it inside the same nix-shell used elsewhere.
+VIS_DIR := vis-rust
+VIS_BIN := $(VIS_DIR)/target/release/slx-cfd-vis
+RUST_NIX ?= nix-shell -p rustc cargo --run
+VIS_ARGS ?=
+
+.PHONY: all test ci ci-live host-test model-check sim-check verify cfd-record cfd-test cfd-fields vis-rust vis-rust-run clean
 
 all: test
 
@@ -63,6 +70,19 @@ cfd-record:
 # replay the recorded lookup through the real trajectory/firmware simulation.
 cfd-test: host-test model-check cfd-record
 	$(PYTHON) $(SIM) --check --motion $(MOTION)
+
+# Same GPU sweep plus macroscopic velocity slices consumed by the Rust
+# visualiser. Regenerates motion.json as well, so the HIL replay stays in sync.
+cfd-fields:
+	@test -x "$(TAICHI_PYTHON)" || { echo "Taichi Python not found: $(TAICHI_PYTHON) (override TAICHI_PYTHON=)"; exit 1; }
+	$(TAICHI_RUN) $(LIVE_CFD) --out $(BUILD)/cfd --dump-field $(CFD_ARGS)
+
+# Native window on Xwayland: live HIL GPIO + Taichi CFD streamlines + rocket STL.
+vis-rust:
+	$(RUST_NIX) 'cargo build --release --offline --manifest-path $(VIS_DIR)/Cargo.toml'
+
+vis-rust-run: vis-rust
+	DISPLAY=$${DISPLAY:-:0} $(VIS_BIN) $(VIS_ARGS)
 
 $(BUILD):
 	mkdir -p $(BUILD)

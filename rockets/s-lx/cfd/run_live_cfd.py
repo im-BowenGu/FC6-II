@@ -91,6 +91,10 @@ def parser() -> argparse.ArgumentParser:
     # validated calibration anchors below, so grid changes cannot silently
     # re-qualify the vehicle.
     p.add_argument("--arch", choices=("cuda", "cpu"), default="cuda")
+    p.add_argument("--dump-field", action="store_true",
+                   help="also write macroscopic velocity slices for the Rust visualiser")
+    p.add_argument("--field-only", action="store_true",
+                   help="dump the requested slices and exit without recording a lookup")
     return p
 
 
@@ -128,6 +132,8 @@ class TaichiLBMSolver:
         self.f2 = ti.field(ti.f32, shape=(nx, ny, nz, 19))
         self.solid = ti.field(ti.i32, shape=(nx, ny, nz))
         self.force = ti.field(ti.f32, shape=(nx, ny, nz, 3))
+        # Optional mid-plane macroscopic velocity slice for the X11 visualiser.
+        self.slice = ti.field(ti.f32, shape=(nx, ny, 3))
         self.fx = ti.field(ti.f32, shape=())
         self.fy = ti.field(ti.f32, shape=())
         self.fz = ti.field(ti.f32, shape=())
@@ -243,6 +249,47 @@ class TaichiLBMSolver:
             "Fz_N": float(self.fz[None]), "Tx_Nm": float(self.tx[None]),
             "Ty_Nm": float(self.ty[None]), "Tz_Nm": float(self.tz[None]),
         }
+
+    @ti.kernel
+    def _snapshot_slice(self, z_idx: ti.i32):
+        """Macroscopic u = sum(f*c)/sum(f) on one x-y plane."""
+        for x, y in ti.ndrange(self.nx, self.ny):
+            rho = 0.0
+            ux = 0.0
+            uy = 0.0
+            uz = 0.0
+            for d in ti.static(range(19)):
+                fd = self.f[x, y, z_idx, d]
+                rho += fd
+                ux += fd * CX[d]
+                uy += fd * CY[d]
+                uz += fd * CZ[d]
+            if rho > 1e-6:
+                self.slice[x, y, 0] = ux / rho
+                self.slice[x, y, 1] = uy / rho
+                self.slice[x, y, 2] = uz / rho
+            else:
+                self.slice[x, y, 0] = 0.0
+                self.slice[x, y, 1] = 0.0
+                self.slice[x, y, 2] = 0.0
+
+    def dump_slice(self, path: Path, z_idx: int) -> None:
+        self._snapshot_slice(z_idx)
+        arr = self.slice.to_numpy()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        dx = DOMAIN_X_M / self.nx
+        with path.open("w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["x_m", "y_m", "ux_lbm", "uy_lbm", "uz_lbm"])
+            for x in range(self.nx):
+                for y in range(self.ny):
+                    w.writerow([
+                        (x + 0.5) * dx,
+                        (y + 0.5 - self.ny * 0.5) * dx,
+                        float(arr[x, y, 0]),
+                        float(arr[x, y, 1]),
+                        float(arr[x, y, 2]),
+                    ])
 
 
 def geometry_mask(nx: int, ny: int, nz: int, angles: list[float]) -> np.ndarray:
@@ -403,6 +450,13 @@ def main() -> int:
         t0 = time.time()
         raw_forces[name] = solver.run(args.steps, dx_m)
         elapsed[name] = time.time() - t0
+        if args.dump_field:
+            slice_path = out / "fields" / f"{name}.csv"
+            solver.dump_slice(slice_path, args.nz // 2)
+            print(f"  velocity slice: {slice_path}", flush=True)
+            if args.field_only:
+                print("Field-only dump complete; lookup untouched")
+                return 0
 
     forces = calibrate(raw_forces, states, configs)
     header = ["label", "stl", "step", "t_s", "Fx_N", "Fy_N", "Fz_N",
