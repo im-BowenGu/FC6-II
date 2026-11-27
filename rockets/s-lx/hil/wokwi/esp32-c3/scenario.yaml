@@ -1,0 +1,10 @@
+version: 1
+name: S-LX ESP32-C3 wiring smoke
+# Wokwi has no BMP280/ICM20689/PCA9685 parts. The diagram uses BMP180 at 0x77
+# and MPU6050 at 0x68; the flight firmware expects 0x76 and 0x68 respectively,
+# so a Wokwi-only sensor shim is required before this ELF can fly the real
+# guidance-core logic. The authoritative real-code HIL is the Verilator + shm
+# harness in ../ (make -C ../ run).
+steps:
+  - name: boot banner from the flight crate
+    wait-serial: "S-LX"

@@ -1,9 +1,9 @@
 # Movable-fin state table.
 #
 # Each state names the deflection of the four fins in the X-mix. Angles are
-# degrees, positive by the convention in the FluidX3D manifest. The `stl`
-# field is optional: either reference one STL per state, or generate one from
-# cad/fin_plate.stl by rotating about the hinge (see README.md).
+# degrees, positive by the pitch/yaw/roll modal convention used by the
+# simulator. The Taichi/CUDA driver voxellises these angles directly; the
+# `stl` field below is retained only as historical provenance.
 fin_plate: ../cad/fin_plate.stl
 hinge_axis: x=0, span along +y
 units: degrees
@@ -28,7 +28,7 @@ states:
 
 simulation:
   domain: axis-aligned box around the rocket
-  precision: FP16S (FluidX3D D3Q19/SRT)
+  precision: Taichi D3Q19/SRT LBM (CUDA, FP32 arithmetic)
   reference_speed_mps: 26.0
   outputs: [force_N, torque_Nm, cd]
   firmware_loop_hz: 100

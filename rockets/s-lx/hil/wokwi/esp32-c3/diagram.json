@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "author": "ASRC S-LX HIL",
+  "parts": [
+    {
+      "type": "board-esp32-c3-devkitm-1",
+      "id": "mcu"
+    },
+    {
+      "type": "board-bmp180",
+      "id": "baro"
+    },
+    {
+      "type": "wokwi-mpu6050",
+      "id": "imu"
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "fin0"
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "fin1"
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "fin2"
+    },
+    {
+      "type": "wokwi-servo",
+      "id": "fin3"
+    },
+    {
+      "type": "wokwi-microsd-card",
+      "id": "sd"
+    }
+  ],
+  "connections": [
+    [
+      "mcu:5",
+      "baro:SCL",
+      "#6ee7b7",
+      []
+    ],
+    [
+      "mcu:4",
+      "baro:SDA",
+      "#6ee7b7",
+      []
+    ],
+    [
+      "mcu:5",
+      "imu:SCL",
+      "#6ee7b7",
+      []
+    ],
+    [
+      "mcu:4",
+      "imu:SDA",
+      "#6ee7b7",
+      []
+    ],
+    [
+      "mcu:0",
+      "fin0:PWM",
+      "#6ee7b7",
+      []
+    ],
+    [
+      "mcu:1",
+      "fin1:PWM",
+      "#6ee7b7",
+      []
+    ],
+    [
+      "mcu:6",
+      "fin2:PWM",
+      "#6ee7b7",
+      []
+    ],
+    [
+      "mcu:7",
+      "fin3:PWM",
+      "#6ee7b7",
+      []
+    ],
+    [
+      "mcu:8",
+      "sd:CS",
+      "#6ee7b7",
+      []
+    ],
+    [
+      "mcu:9",
+      "sd:SCK",
+      "#6ee7b7",
+      []
+    ],
+    [
+      "mcu:10",
+      "sd:DO",
+      "#6ee7b7",
+      []
+    ],
+    [
+      "mcu:19",
+      "sd:DI",
+      "#6ee7b7",
+      []
+    ]
+  ]
+}

@@ -1,0 +1,7 @@
+# Wokwi project config for the S-LX STM32F103 sensor/guidance smoke test.
+# The firmware is built locally from the real C guidance core; see
+# firmware/Makefile and README.md in this directory.
+[wokwi]
+version = 1
+firmware = 'firmware/firmware.elf'
+elf = 'firmware/firmware.elf'

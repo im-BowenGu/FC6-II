@@ -2,13 +2,14 @@
  * S-LX rocket profile (UKROC 2027 competition) — hardware-independent guidance core.
  *
  * Ported from rocket/firmware/esp32_rust/guidance-core/src/lib.rs, then tuned
- * against the coupled FP16S/OpenRocket 100 Hz surrogate. The ESP32-C3 Rust
+ * against the coupled static-CFD/OpenRocket 100 Hz surrogate. The ESP32-C3 Rust
  * firmware is deliberately unchanged; the tuning divergence is STM32-only.
  * The host test in tests/test_slx_profile.c checks the constants, reference
  * table, boost schedule, mixer, state machine and failsafe-neutral behaviour.
  */
 
 #include "slx_profile.h"
+#include "slx_aero.h"
 
 #include <math.h>
 #include <string.h>
@@ -333,9 +334,8 @@ slx_snapshot_t slx_guidance_tick(slx_guidance_t *g,
         float f_up;
         float trim;
         float target;
-        float pitch_cmd;
-        float roll_cmd;
-        float yaw_damp;
+        float q_ratio;
+        float desired_moment_nm[3];
 
         slx_reference_at(t_from_launch, &g->ref_alt, &g->ref_vv);
 
@@ -364,10 +364,22 @@ slx_snapshot_t slx_guidance_tick(slx_guidance_t *g,
                               0.0f, SLX_MAX_TILT_DEG);
         g->tilt_cmd_deg = target;
 
-        pitch_cmd = SLX_KP_TILT * (target - g->pitch_deg) - SLX_KD_RATE * imu.gx_dps;
-        roll_cmd = SLX_KP_TILT * (0.0f - g->roll_deg) - SLX_KD_RATE * imu.gy_dps;
-        yaw_damp = SLX_KD_YAW * imu.gz_dps;
-        slx_mix(pitch_cmd, roll_cmd, yaw_damp, cmd);
+        /*
+         * Authority-aware allocation. The PD loop requests a *moment*, not a
+         * raw servo angle. Invert the CFD fin-to-moment map at the current
+         * dynamic pressure so the same correction uses fewer degrees at high
+         * q and more degrees (within the 15 deg rail) when the fins are weak.
+         * At q = Q_REF this reproduces the original tuned fin commands.
+         */
+        q_ratio = slx_aero_q_ratio(g->vv_est, g->smoothed_alt);
+        desired_moment_nm[0] = SLX_AERO_TY_PITCH *
+            (SLX_KP_TILT * (target - g->pitch_deg) - SLX_KD_RATE * imu.gx_dps);
+        desired_moment_nm[1] = SLX_AERO_TZ_YAW *
+            (SLX_KP_TILT * (0.0f - g->roll_deg) - SLX_KD_RATE * imu.gy_dps);
+        desired_moment_nm[2] = SLX_AERO_TX_ROLL * (SLX_KD_YAW * imu.gz_dps);
+        if (!slx_aero_mix_from_moments(desired_moment_nm, q_ratio, cmd)) {
+            memset(cmd, 0, sizeof(cmd));
+        }
         slx_write_fins(g, cmd);
 
         /*

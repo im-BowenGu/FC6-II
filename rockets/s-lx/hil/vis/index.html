@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>S-LX HIL telemetry</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --bg: #0b1017; --panel: #131b26; --line: #223044;
+    --text: #d9e3ee; --muted: #8092a6; --accent: #6ee7b7;
+    --amber: #fbbf24; --red: #f87171; --blue: #60a5fa; --violet: #c084fc;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.4 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  header { display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+           padding: 14px 20px; border-bottom: 1px solid var(--line); }
+  h1 { font-size: 16px; margin: 0; letter-spacing: .04em; }
+  .pill { padding: 4px 10px; border-radius: 999px; font-weight: 700;
+          background: #1d2a3a; border: 1px solid var(--line); }
+  .pill[data-s="4"] { color: var(--accent); border-color: #2f7d63; }
+  .pill[data-s="5"] { color: var(--amber); border-color: #7a5a1e; }
+  .pill[data-s="7"] { color: var(--red); border-color: #7a2b2b; }
+  .live { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #475569; }
+  .dot.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+  .spacer { flex: 1; }
+  label { color: var(--muted); }
+  input { width: 90px; background: var(--panel); color: var(--text);
+          border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  main { padding: 16px 20px 40px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+           gap: 10px; margin-bottom: 18px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+          padding: 10px 12px; }
+  .card .k { color: var(--muted); font-size: 11px; text-transform: uppercase; }
+  .card .v { font-size: 20px; font-weight: 700; margin-top: 4px; }
+  .card .u { color: var(--muted); font-size: 11px; font-weight: 400; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr));
+          gap: 14px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+           padding: 12px 14px; }
+  .panel h2 { font-size: 12px; color: var(--muted); margin: 0 0 8px;
+              text-transform: uppercase; letter-spacing: .06em; }
+  canvas { width: 100%; height: 200px; display: block; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 6px; font-size: 11px;
+            color: var(--muted); }
+  .legend i { display: inline-block; width: 14px; height: 3px; vertical-align: middle;
+              margin-right: 5px; border-radius: 2px; }
+  .events { max-height: 220px; overflow: auto; font-size: 12px; }
+  .events div { padding: 3px 0; border-bottom: 1px solid #1c2635; }
+  .events .t { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>S-LX · HARDWARE-IN-THE-LOOP</h1>
+  <span class="pill" id="state" data-s="0">BOOT</span>
+  <span class="live"><span class="dot" id="dot"></span><span id="liveText">waiting for logs</span></span>
+  <span class="spacer"></span>
+  <label for="run">run</label><input id="run" value="cfd">
+  <label for="stride">every</label><input id="stride" value="4" type="number" min="1">
+</header>
+<main>
+  <div class="cards" id="cards"></div>
+  <div class="grid">
+    <div class="panel"><h2>Altitude</h2><canvas id="c-alt"></canvas>
+      <div class="legend" id="l-alt"></div></div>
+    <div class="panel"><h2>Fin commands (deg)</h2><canvas id="c-fin"></canvas>
+      <div class="legend" id="l-fin"></div></div>
+    <div class="panel"><h2>Attitude (deg)</h2><canvas id="c-att"></canvas>
+      <div class="legend" id="l-att"></div></div>
+    <div class="panel"><h2>Axial acceleration (g)</h2><canvas id="c-acc"></canvas>
+      <div class="legend" id="l-acc"></div></div>
+    <div class="panel"><h2>Flight state transitions</h2><div class="events" id="events"></div></div>
+    <div class="panel"><h2>Dynamics</h2><canvas id="c-dyn"></canvas>
+      <div class="legend" id="l-dyn"></div></div>
+  </div>
+</main>
+<script>
+const STATES = ['BOOT','ARMED','READY','LAUNCH','GUIDED','DESCENT','LANDED','FAULT'];
+const COLORS = {
+  alt: '#6ee7b7', ref: '#fbbf24', pred: '#c084fc',
+  fin0: '#60a5fa', fin1: '#f87171', fin2: '#fbbf24', fin3: '#c084fc',
+  pitch: '#60a5fa', roll: '#f87171', ax: '#60a5fa', ay: '#fbbf24', az: '#6ee7b7',
+  drag: '#f87171', thrust: '#6ee7b7', moment: '#c084fc'
+};
+let lastRun = '', lastStride = 0;
+
+function fmt(v, d=2) { return Number(v || 0).toFixed(d); }
+
+function cards(d) {
+  const b = d.bridge.latest || {}, p = d.plant.latest || {}, r = d.run || {};
+  const s = d.bridge.series || {}, ps = d.plant.series || {};
+  const t = s.t && s.t.length ? s.t[s.t.length - 1] : 0;
+  const items = [
+    ['state', STATES[b.state|0] || 'BOOT', ''],
+    ['time', fmt(t/1000, 2), 's'],
+    ['altitude', fmt(p.alt_m ?? b.alt_m, 1), 'm'],
+    ['vert. speed', fmt(b.vv_ms, 1), 'm/s'],
+    ['predicted apogee', fmt(b.pred_apo_m, 1), 'm'],
+    ['reference apogee', r.apogee_m != null ? fmt(r.apogee_m,1) : '—', 'm'],
+    ['pitch / roll', fmt(b.pitch_deg,1)+' / '+fmt(b.roll_deg,1), 'deg'],
+    ['fins', [0,1,2,3].map(i=>fmt(b['fin'+i],1)).join(' / '), 'deg'],
+    ['axial accel', fmt(b.az_g,2), 'g'],
+    ['frames', (d.meta.bridge_rows||0), '']
+  ];
+  document.getElementById('cards').innerHTML = items.map(([k,v,u]) =>
+    `<div class="card"><div class="k">${k}</div><div class="v">${v} <span class="u">${u}</span></div></div>`
+  ).join('');
+}
+
+function draw(canvasId, legendId, series, x, defs, fixedMax) {
+  const cv = document.getElementById(canvasId), ctx = cv.getContext('2d');
+  const rect = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  cv.width = rect.width*dpr; cv.height = rect.height*dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  const w = rect.width, h = rect.height, pad = {l:44,r:8,t:8,b:20};
+  ctx.clearRect(0,0,w,h);
+  ctx.fillStyle = '#0f1620'; ctx.fillRect(0,0,w,h);
+  const n = (x && x.length) || 0;
+  let xmax = n ? x[n-1] : 1, lo = 0, hi = fixedMax || 1;
+  if (!fixedMax) {
+    for (const def of defs) for (const v of (series[def.key]||[])) {
+      if (v < lo) lo = v; if (v > hi) hi = v;
+    }
+    if (hi - lo < 1e-6) hi = lo + 1;
+  }
+  const sx = v => pad.l + (xmax > 0 ? v/xmax : 0)*(w-pad.l-pad.r);
+  const sy = v => h-pad.b - ((v-lo)/(hi-lo))*(h-pad.t-pad.b);
+  ctx.strokeStyle = '#223044'; ctx.fillStyle = '#8092a6'; ctx.lineWidth = 1;
+  ctx.font = '10px ui-monospace, monospace';
+  for (let i=0;i<=4;i++) {
+    const v = lo + (hi-lo)*i/4, y = sy(v);
+    ctx.beginPath(); ctx.moveTo(pad.l,y); ctx.lineTo(w-pad.r,y); ctx.stroke();
+    ctx.fillText(v.toFixed(Math.abs(hi-lo)<10?1:0), 4, y+3);
+  }
+  ctx.fillText(fmt(xmax,0), w-pad.r-24, h-5);
+  for (const def of defs) {
+    const vals = series[def.key] || [];
+    ctx.strokeStyle = def.color; ctx.lineWidth = 1.5; ctx.beginPath();
+    for (let i=0;i<vals.length;i++) {
+      const px = sx(x[i]||0), py = sy(vals[i]);
+      if (i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    }
+    ctx.stroke();
+  }
+  document.getElementById(legendId).innerHTML = defs.map(def =>
+    `<span><i style="background:${def.color}"></i>${def.label}</span>`).join('');
+}
+
+function charts(d) {
+  const b = d.bridge.series || {}, p = d.plant.series || {};
+  const bt = (b.t||[]).map(v=>v/1000), pt = p.t||[];
+  draw('c-alt','l-alt', b, bt,
+    [{key:'alt_m',label:'altitude (firmware)',color:COLORS.alt},
+     {key:'pred_apo_m',label:'predicted apogee',color:COLORS.pred}]);
+  draw('c-fin','l-fin', b, bt, [0,1,2,3].map(i =>
+    ({key:'fin'+i,label:'fin'+i,color:COLORS['fin'+i]})), 16);
+  draw('c-att','l-att', b, bt,
+    [{key:'pitch_deg',label:'pitch',color:COLORS.pitch},
+     {key:'roll_deg',label:'roll',color:COLORS.roll}]);
+  draw('c-acc','l-acc', b, bt,
+    [{key:'az_g',label:'az',color:COLORS.az},
+     {key:'ax_g',label:'ax',color:COLORS.ax},
+     {key:'ay_g',label:'ay',color:COLORS.ay}]);
+  draw('c-dyn','l-dyn', p, pt,
+    [{key:'thrust_n',label:'thrust',color:COLORS.thrust},
+     {key:'drag_n',label:'drag',color:COLORS.drag},
+     {key:'M_pitch_nm',label:'pitch moment',color:COLORS.moment}]);
+  const ev = (d.events||[]).slice(-30).reverse().map(e =>
+    `<div><span class="t">${fmt(e.t_s,2)}s</span> `+
+    `${STATES[e.from]||'—'} → <b>${STATES[e.to]||e.to}</b> @ ${fmt(e.alt_m,1)}m</div>`).join('');
+  document.getElementById('events').innerHTML = ev || '<div class="t">no events</div>';
+}
+
+async function poll() {
+  const run = document.getElementById('run').value || 'cfd';
+  const stride = Math.max(1, parseInt(document.getElementById('stride').value)||4);
+  if (run !== lastRun || stride !== lastStride) { lastRun = run; lastStride = stride; }
+  try {
+    const res = await fetch(`/api/state?run=${encodeURIComponent(run)}&stride=${stride}`);
+    if (!res.ok) throw new Error(res.status);
+    const d = await res.json();
+    const st = d.bridge.latest.state|0;
+    const pill = document.getElementById('state');
+    pill.textContent = STATES[st]||'BOOT'; pill.dataset.s = st;
+    const age = d.meta.server_time - d.meta.bridge_mtime;
+    const live = age < 3 && d.meta.bridge_rows > 1;
+    document.getElementById('dot').classList.toggle('on', live);
+    document.getElementById('liveText').textContent =
+      d.meta.bridge_rows ? (live ? 'live' : `last frame ${age.toFixed(0)}s ago`) : 'waiting for logs';
+    cards(d); charts(d);
+  } catch (e) {
+    document.getElementById('liveText').textContent = 'server error: '+e.message;
+  }
+}
+
+poll(); setInterval(poll, 250);
+</script>
+</body>
+</html>

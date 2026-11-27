@@ -1,0 +1,8 @@
+# Wokwi project config for the ESP32-C3 board/wiring view of S-LX.
+# firmware/firmware.elf is produced by the unchanged Rust flight crate at
+# rocket/firmware/esp32_rust/esp32c3-flight (requires the rust riscv32imc
+# target). It is intentionally not committed here.
+[wokwi]
+version = 1
+firmware = 'firmware/firmware.elf'
+elf = 'firmware/firmware.elf'

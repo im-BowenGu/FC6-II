@@ -15,7 +15,7 @@ stack in the main rocket project is untouched.
 | `include/slx_stm32_pinmap.h` | STM32F103C8T6 Blue Pill pin map |
 | `tests/test_slx_profile.c` | host tests for constants, interpolation, mixer, state machine, accel gate, coast weathervane, failsafe |
 | `model.yaml` | rough model manifest: dimensions, motor, target, aero inputs, CAD references |
-| `cad/`, `cfd/` | OpenRocket models, fin STL, movable-fin state table and roadmap |
+| `cad/`, `cfd/` | OpenRocket models, fin STL, movable-fin state table and Taichi/CUDA sweep driver |
 | `sim/` | self-contained 100 Hz firmware-in-the-loop trajectory surrogate |
 | `Makefile` | `make ci` = offline host tests + local CI checks; `make ci-live` = live fin-state CFD + recorded-motion replay |
 | `ci/run-local.sh` | standalone local CI entry point; no GitHub Actions, no PR gate |
@@ -78,21 +78,22 @@ Every simulation run writes `sim/logs/<mode>.csv` (100 Hz telemetry),
 `python3 sim/run_dynamic_sim.py --check --log-dir /path/to/logs` to redirect
 them. Logs are intentionally ignored by git.
 
-`cfd-test` runs FluidX3D once per selected fin state (eight states by
-default, 20k steps each), writes the force/torque history to
-`build/cfd/logs/`, fits it into `build/cfd/motion.json`, then runs the real
-100 Hz firmware loop against **that recorded lookup**. The flight loop never
-calls the flow solver. Requires an OpenCL device and `FLUIDX3D_SRC`, plus
-`OCL_LIB`/`ICD` if the runner needs explicit ICD paths; a small smoke sweep
-is `make cfd-record CFD_ARGS="--configs neutral,pitch_p15 --steps 2000"`.
-The committed `sim/data/` CSVs remain the offline fallback for `make test`.
+`cfd-test` runs a Taichi D3Q19 lattice-Boltzmann solve once per selected fin
+state on CUDA (eight states, 600 steps each by default), writes raw lattice
+forces and calibrated physical force/torque rows to `build/cfd/logs/`, fits
+them into `build/cfd/motion.json`, then runs the real 100 Hz firmware loop
+against **that recorded lookup**. The flight loop never calls the flow solver.
+It requires a CUDA-capable GPU and Taichi 1.7+ in a Python 3.11 venv; override
+`TAICHI_PYTHON` and `TAICHI_LD_LIBRARY_PATH` if they are not at the sandbox
+defaults. The committed `sim/data/` CSVs remain the offline fallback for
+`make test`; the old FluidX3D/OpenFOAM inputs are retained as provenance only.
 
 There is no GitHub Actions workflow and no PR gate. The former workflow
 (`ci/rocket-profile.yml`), which also asserted that upstream files were not
 deleted and that the top-level `README.md` matched upstream, has been removed.
 `ci/run-local.sh` is the sole CI entry point: it runs offline by default and
-adds the live-CFD leg only when `RUN_LIVE_CFD=1` on a machine with an OpenCL
-device. No check compares this repository's README to any upstream ref.
+adds the live-CFD leg only when `RUN_LIVE_CFD=1` on a machine with Taichi and a
+CUDA GPU. No check compares this repository's README to any upstream ref.
 
 The simulator check prints all eight modes and asserts:
 
@@ -102,16 +103,42 @@ The simulator check prints all eight modes and asserts:
   0.84 s, coast fin ≤8.9°;
 * steady 5 m/s wind: 232.36 m, no fin saturation.
 
-These are regression bounds on the coupled FP16S/OpenRocket surrogate, **not**
-flight qualification. There is no HIL bench here: real ICM-20689/BMP280/PCA9685
-behaviour, SD writes, servo timing, the 100 Hz deadline, ejection and egg
-survival remain unverified. The ARM build was checked with Newlib-nano/`nosys`
-as a substitute for upstream `picolibc.specs`; upstream picolibc, flashing and
-hardware timing still need verification.
+These are regression bounds on the coupled static-CFD/OpenRocket surrogate,
+**not** flight qualification.
+
+## Hardware-in-the-loop bench
+
+`hil/` adds a local HIL bench that runs the **same C guidance core** as the
+flight image (no Python avionics port). A Verilated peripheral model and C++
+bridge consume shared-memory sensor frames from a physics plant that replays
+the OpenRocket F32 flight and the recorded CFD lookup:
+
+```sh
+make -C rockets/s-lx/hil build   # Verilate RTL + build bridge (needs Verilator)
+make -C rockets/s-lx/hil run     # full 100 Hz flight, lockstep over shm
+make -C rockets/s-lx/hil vis     # browser GUI at http://127.0.0.1:8765
+```
+
+`hil/wokwi/` adds two local-only Wokwi projects: a runnable STM32 smoke test
+that links the unchanged guidance core (`make -C rockets/s-lx/hil wokwi-stm32`,
+token kept outside the repo) and an ESP32-C3 wiring/lint project. Wokwi has no
+BMP280/ICM20689/PCA9685 parts, so those transports are substituted; the control
+law is not. See `hil/wokwi/README.md` for the exact substitution and serial
+wiring notes.
+
+CI/CD remains **local only**: `make -C rockets/s-lx ci`, `make -C rockets/s-lx
+ci-live` and `rockets/s-lx/ci/run-local.sh` are the sole entry points. No GitHub
+Actions workflow or PR gate exists.
+
+Real ICM-20689/BMP280/PCA9685 parts, SD writes, servo timing, the 100 Hz
+deadline, ejection and egg survival remain unverified. The ARM build was checked
+with Newlib-nano/`nosys` as a substitute for upstream `picolibc.specs`;
+upstream picolibc, flashing and hardware timing still need verification.
 
 ## Known open items
 
 * Verify physical fin numbering: `xmix_p15` couples pitch and yaw.
 * Canopy `Cd ≈ 0.865` / `CdA = 0.150` needs a ground drop/ejection test.
-* Flutter check and HIL sensor/servo/SD tests are outstanding.
+* Flutter check and ground-test the real ICM-20689/BMP280/PCA9685 + SD + servo
+  timing on the flight PCB (the HIL substitutes these transports).
 * True moving-boundary CFD is a separate SDK/production task (`cfd/README.md`).

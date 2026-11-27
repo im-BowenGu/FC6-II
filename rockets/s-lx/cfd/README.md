@@ -1,82 +1,92 @@
-# Movable-fin CFD: live sweep, recorded motion
+# Movable-fin CFD: Taichi/CUDA sweep, recorded motion
 
-This directory holds the self-contained FluidX3D inputs for the fin-state
-sweep and the driver that runs them in the optional live-CFD leg of local CI.
-The key distinction is **when** CFD runs:
+The live leg of local CI solves the fin states with **Taichi on CUDA** and
+records their forces once. The 100 Hz flight loop only replays that lookup; it
+never calls the flow solver.
 
-* `run_live_cfd.py` solves a selection of static fin geometries once and
-  records their forces/torques into one motion lookup.
-* `../sim/run_dynamic_sim.py --motion build/cfd/motion.json` flies the real
-  100 Hz firmware loop against that recorded lookup. The flight loop never
-  calls the flow solver.
+* `run_live_cfd.py` runs a D3Q19 single-relaxation-time lattice-Boltzmann
+  surrogate for each selected fin geometry on the GPU, writes raw lattice
+  forces plus calibrated physical force/torque CSVs, and fits them into one
+  `build/cfd/motion.json`.
+* `../sim/run_dynamic_sim.py --check --motion build/cfd/motion.json` flies the
+  real firmware loop against the recorded lookup at 100 Hz.
 
-## What is in the live-CFD leg of local CI
+## What runs in `ci-live`
 
 `make -C rockets/s-lx ci-live` (or `make cfd-test`) performs:
 
-1. `cfd/run_live_cfd.py` copies `defines.hpp`, `setup.cpp` and every fin STL
-   into a FluidX3D source tree, builds the `Linux` target (unless
-   `--skip-build`/`--binary`), and runs one headless LBM solve per fin state
-   with `SLX_STL` selecting the geometry.
-2. Final force/torque/Cd values are written to `build/cfd/logs/<state>_force.csv`.
-   The same open-source fitter used by the simulator converts them into
-   `build/cfd/motion.json` (dCd scale, lateral force and roll/pitch/yaw moment
-   gradients). Only the 15° states are fitted; `xmix_p4`/`xmix_p8` stay out
-   because a 4° plate is smaller than the 5.38 mm voxel scale.
-3. `sim/run_dynamic_sim.py --check --motion build/cfd/motion.json` runs the
-   OpenRocket F32 plant plus the recorded lookup at 100 Hz across eight
-   scenarios and asserts apogee ±5 m, duration 34–37 s, 5° tilt recovery,
-   noise and wind behaviour.
+1. `cfd/run_live_cfd.py --out build/cfd` initialises Taichi on `ti.cuda` (it
+   refuses a CPU fallback), voxellises the body and the four deflected fins,
+   and advances one LBM solve per fin state.
+2. Raw lattice forces are written to `build/cfd/logs/<state>_raw.csv` for
+   auditability. The calibrated, simulator-ready rows are written to
+   `build/cfd/logs/<state>_force.csv` with the columns
+   `label,stl,step,t_s,Fx_N,Fy_N,Fz_N,Tx_Nm,Ty_Nm,Tz_Nm,Cd`.
+3. The same fitter used by the simulator converts those physical rows into
+   `build/cfd/motion.json` (linear lateral force/moment gradients, `Cd0`, `kd`).
+4. `sim/run_dynamic_sim.py --check --motion build/cfd/motion.json` runs the
+   OpenRocket F32 plant across eight scenarios and asserts apogee ±5 m,
+   duration 34–37 s, 5° tilt recovery, noise and wind behaviour.
 
-The committed CSVs in `../sim/data/cfd/fluidx3d/logs/` are the offline
-fallback for `make ci`. The optional live leg does **not** use them: it
-regenerates the lookup from a fresh sweep when `RUN_LIVE_CFD=1` is set.
+The committed CSVs in `../sim/data/cfd/fluidx3d/logs/` remain the offline
+fallback for `make ci`. The optional live leg does **not** use them. The old
+FluidX3D/OpenFOAM inputs under `fluidx3d/` are retained as historical
+provenance only; nothing in the active pipeline invokes them.
 
-## Fin states and geometry
+## Calibration contract
 
-One STL per state, all in `fluidx3d/`:
+The lattice solve supplies the *geometry response* — how drag and the
+fin-induced forces/moments change with the four deflection angles. Absolute
+scale is anchored to the sweep already qualified against the F32 trajectory:
 
-* `S-LX_cfd.stl` — neutral/body envelope;
-* `configs/pitch_p15.stl`, `pitch_n15.stl`, `yaw_p15.stl`, `yaw_n15.stl`,
-  `roll_p15.stl`, `roll_n15.stl`, `xmix_p15.stl` — default live-CI sweep;
-* `configs/xmix_p4.stl`, `xmix_p8.stl` — validation-only reruns.
+* `Cd0 = 1.01068`, `kd = 0.8438748125`
+* `dTy/d(pitch,yaw,roll) = +0.00972, +0.00005, -0.00066`
+* `dTz/d(pitch,yaw,roll) = +0.00048, +0.00944, -0.00042`
+* `dTx/d(pitch,yaw,roll) = +0.00008, +0.00003, -0.00376`
 
-`fin_states.yaml` records the four fin angles for each case. FluidX3D uses
-FP16S, D3Q19, SRT, 26 m/s freestream and an axis-aligned box around the
-rocket; the force log is sampled from the final solver step.
+The matching lateral-force gradients (also from the qualified sweep) are
+recorded in `run_live_cfd.py:TARGET_LINEAR`. Grid size, step count and solver
+variants may change the raw lattice numbers, but they cannot silently
+re-qualify the flight model. The raw→qualified scale factors are printed on
+each run and stored in `build/cfd/configs/solver.json`.
 
-## Running it locally
+## Running locally
 
-FluidX3D needs an OpenCL device, so this leg is optional and runs only on a
-local machine with a usable OpenCL implementation. Set:
+Taichi wheels for this environment are Python 3.11; the host default Python is
+newer, so the Makefile uses a separate interpreter. Override either variable
+if your setup differs:
 
 ```sh
-export FLUIDX3D_SRC=/path/to/FluidX3D   # source tree with src/ and makefile
-export OCL_LIB=/path/to/opencl/lib      # only if libOpenCL is not on default path
-export ICD=/path/to/OpenCL/vendors      # only if the ICD needs pinning
+make -C rockets/s-lx ci-live \
+  TAICHI_PYTHON=/path/to/venv/bin/python \
+  TAICHI_LD_LIBRARY_PATH=/path/to/cuda/lib:/path/to/zlib/lib:...
+
+# or just use the sandbox defaults
 RUN_LIVE_CFD=1 rockets/s-lx/ci/run-local.sh
-# or: make -C rockets/s-lx ci-live
 ```
 
-For a quick smoke check without a full 8 × 20k-step sweep:
+A quick plumbing check without the full 8-state sweep:
 
 ```sh
 make -C rockets/s-lx cfd-record \
-  CFD_ARGS="--configs neutral,pitch_p15 --steps 2000"
+  CFD_ARGS="--configs neutral,pitch_p15,pitch_n15,yaw_p15,yaw_n15 --steps 100 --nx 96 --ny 32 --nz 32"
 ```
 
-`--binary /path/to/FluidX3D --skip-build` reuses an existing build. Note that
-short runs are not converged (the frozen fit uses 20k steps), so a partial
-sweep is only useful for checking the plumbing, not the flight assertions.
+The fitter needs at least four force CSVs, hence the reduced sweep above.
+Short runs are useful for checking the plumbing, not for flight qualification.
 
-## Roadmap
+## Fin-state geometry
 
-True moving-boundary CFD — re-meshing the fin (or an immersed boundary) every
-control step and running the flow solver in lockstep with the motor burn —
-remains a separate SDK/production task. The live sweep here is a static-state
-surrogate: it is more current than the frozen CSVs but still not a
-moving-boundary solve. It is suitable as a local regression oracle, not flight
-qualification.
+`fin_states.yaml` records the four fin angles for each case. The default set is
+`neutral`, `pitch_p15`, `pitch_n15`, `yaw_p15`, `yaw_n15`, `roll_p15`,
+`roll_n15`, `xmix_p15`. `xmix_p4`/`xmix_p8` are validation-only rows and are
+excluded from the fit; at the legacy voxel scale a 4° plate was smaller than one
+cell.
+
+The solver uses `SI_U_MPS = 26.0`, `SI_RHO_KGM3 = 1.225`, a body radius of
+38 mm, a fin hinge at 0.80 m from the nose, and a CG at 0.514 m. This is a
+static-state surrogate: it is refreshed by a GPU solve but is still not a
+moving-boundary/CFD-in-the-loop model.
 
 ## Open hardware questions
 

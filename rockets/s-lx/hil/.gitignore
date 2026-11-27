@@ -1,0 +1,13 @@
+# Generated HIL build/replay artifacts. The sources, Makefiles and docs are
+# intentionally kept in git; only machine-generated output is ignored here.
+/bin/
+/obj/
+/obj_dir/
+/logs/
+__pycache__/
+*.pyc
+
+# Wokwi harness ELF/objects are built locally from the real guidance core.
+wokwi/stm32f103/firmware/firmware.elf
+wokwi/stm32f103/firmware/*.o
+wokwi/esp32-c3/firmware/

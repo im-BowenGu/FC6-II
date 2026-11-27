@@ -4,7 +4,7 @@
  * Hardware-independent guidance constants and control law. The 100 Hz state
  * machine, reference trajectory and failsafe posture were ported from the
  * authoritative Rust guidance-core in rocket/firmware/esp32_rust/. The trim
- * constants below were then tuned against the coupled FP16S/OpenRocket
+ * constants below were then tuned against the coupled static-CFD/OpenRocket
  * surrogate; the ESP32-C3 Rust firmware is unchanged, so the two options now
  * intentionally differ in apogee-trim tuning only.
  *

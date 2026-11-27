@@ -1,0 +1,10 @@
+version: 1
+name: S-LX STM32F103 smoke
+# The firmware substitutes scenario-driven sensor values for the BMP280 and
+# ICM20689 that Wokwi cannot emulate, then runs the unchanged C guidance core
+# and streams its real CSV telemetry row format over USART1.
+steps:
+  - name: board boots and guidance core initialises
+    wait-serial: "S-LX HIL WOKWI BOOT"
+  - name: 100 Hz guidance loop completes
+    wait-serial: "S-LX HIL WOKWI DONE"

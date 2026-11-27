@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Dynamic CFD + trajectory simulation for S-LX (FP16S FluidX3D lookup).
+"""Dynamic CFD + trajectory simulation for S-LX (recorded static lookup).
 
 This is a *coupled surrogate*, not a moving-boundary CFD solve:
 
-  * FluidX3D (FP16S, D3Q19, SRT) already resolved eight+ static fin geometries
+  * A static CFD sweep already resolved eight+ fin geometries
     at 26 m/s.  This script fits a small aero lookup (Cd increment, lateral
     force, roll/pitch/yaw moments) from those force/torque CSVs.
   * The saved OpenRocket F32 flight supplies thrust, mass, air density and the
@@ -40,7 +40,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 # Self-contained verification bundle: the OpenRocket reference flight and the
-# frozen FP16S force CSVs travel with the profile so a local CI run needs no
+# frozen force CSVs travel with the profile so a local CI run needs no
 # other repository and no third-party Python modules.
 DATA = HERE / "data"
 ROCKET = DATA
@@ -50,8 +50,8 @@ OR_CSV = DATA / "reference_flight.csv"
 
 DT = 0.01                 # 100 Hz, same as LOOP_HZ in both flight stacks
 G = 9.80665
-U_REF = 26.0              # FluidX3D freestream [m/s]
-RHO_REF = 1.225           # FluidX3D air density [kg/m^3]
+U_REF = 26.0              # CFD reference freestream [m/s]
+RHO_REF = 1.225           # CFD reference air density [kg/m^3]
 Q_REF = 0.5 * RHO_REF * U_REF ** 2
 CD0_CFD = 1.233524        # neutral final-step CFD Cd (20k steps)
 FIN_REF_DEG = 15.0
@@ -747,8 +747,8 @@ def make_plots(runs: dict[str, list[dict]], aero: dict, or_data: dict[str, Serie
     alt_ref = [or_data["Altitude"].at(r["t_s"]) for r in neutral]
     svg_plot(plots / "altitude.png",
              [{"name": "OpenRocket saved flight (fixed fins)", "x": t_ref, "y": alt_ref, "color": "#7b8794", "w": 2},
-              {"name": "FP16S lookup + neutral fins", "x": [r["t_s"] for r in neutral], "y": [r["z_m"] for r in neutral], "color": "#1f77b4"},
-              {"name": "FP16S lookup + firmware guidance", "x": [r["t_s"] for r in guided], "y": [r["z_m"] for r in guided], "color": "#d62728"}],
+              {"name": "recorded lookup + neutral fins", "x": [r["t_s"] for r in neutral], "y": [r["z_m"] for r in neutral], "color": "#1f77b4"},
+              {"name": "recorded lookup + firmware guidance", "x": [r["t_s"] for r in guided], "y": [r["z_m"] for r in guided], "color": "#d62728"}],
              "Dynamic CFD + trajectory: altitude", "time [s]", "altitude [m]",
              [(TARGET_APOGEE_M, "#2ca02c", "229 m competition target")])
 
@@ -770,7 +770,7 @@ def make_plots(runs: dict[str, list[dict]], aero: dict, or_data: dict[str, Serie
              [{"name": "CFD samples (sweep + 4/8 deg validation)",
                "x": [math.sqrt(sum(d * d for d in s["defs"]) / 4.0) for s in aero["samples"]],
                "y": [s["dCd"] for s in aero["samples"]], "color": "#1f77b4"}],
-             "FP16S CFD drag increment vs fin deflection", "RMS fin deflection [deg]", "delta Cd [-]")
+             "CFD drag increment vs fin deflection", "RMS fin deflection [deg]", "delta Cd [-]")
 
     svg_plot(plots / "trajectory_xy.png",
              [{"name": "guided trajectory", "x": [r["x_m"] for r in guided], "y": [r["z_m"] for r in guided], "color": "#d62728"},
@@ -839,7 +839,7 @@ def make_movie(guided: list[dict], outdir: Path, fps: int = 10) -> None:
             dx = side * (12 + 34 * math.sin(math.radians(deg)))
             fy = bottom - 8 - idx * 5
             parts.append(f'<line x1="{xc+side*11:.1f}" y1="{fy:.1f}" x2="{xc+dx:.1f}" y2="{fy+26:.1f}" stroke="#d62728" stroke-width="5"/>')
-        parts.append(f'<text x="20" y="30" font-family="DejaVu Sans" font-size="20" font-weight="bold">S-LX - dynamic FP16S CFD + firmware trajectory</text>')
+        parts.append(f'<text x="20" y="30" font-family="DejaVu Sans" font-size="20" font-weight="bold">S-LX - dynamic CFD + firmware trajectory</text>')
         parts.append(f'<text x="20" y="56" font-family="DejaVu Sans" font-size="16">t = {row["t_s"]:.1f} s    alt = {z:.1f} m    vv = {row["vz_mps"]:.1f} m/s</text>')
         parts.append(f'<text x="20" y="78" font-family="DejaVu Sans" font-size="16">fins = [{defs[0]:.1f}, {defs[1]:.1f}, {defs[2]:.1f}, {defs[3]:.1f}] deg    trim = {row["tilt_cmd_deg"]:.1f} deg    state = {row["state"]}</text>')
         # altitude history ribbon
@@ -990,7 +990,7 @@ def write_logs(runs: dict[str, list[dict]], summaries: dict[str, dict],
     (outdir / "summaries.json").write_text(json.dumps(summaries, indent=2) + "\n")
     (outdir / "run.json").write_text(json.dumps({
         "simulator": "run_dynamic_sim.py",
-        "plant": "OpenRocket F32 + FP16S static fin lookup",
+        "plant": "OpenRocket F32 + recorded static fin lookup",
         "loop_hz": 1.0 / DT,
         "cfd_samples": [s["name"] for s in aero["samples"]],
         "kd": aero["kd"], "cd0": aero["Cd0"], "drag_rms": aero["drag_rms"],
@@ -1042,7 +1042,7 @@ def main() -> None:
         print(f"Recorded CFD motion lookup: {out}")
         return
     print(f"CFD samples: {', '.join(s['name'] for s in aero['samples'])}")
-    print(f"FP16S drag scale kd = {aero['kd']:.4f}, Cd0 = {aero['Cd0']:.5f}, "
+    print(f"recorded CFD drag scale kd = {aero['kd']:.4f}, Cd0 = {aero['Cd0']:.5f}, "
           f"drag fit RMS = {aero['drag_rms']:.4f}")
     for key in ("Ty", "Tz", "Tx"):
         print(f"  d{key}/d(pitch,yaw,roll) = " +
@@ -1104,8 +1104,8 @@ def main() -> None:
                 w.writerow({"mode": mode, **row})
 
     summary = {
-        "model": "FP16S FluidX3D static force lookup + OpenRocket F32 plant + 100 Hz firmware loop",
-        "fp16": "FP16S enabled in cfd/fluidx3d/defines.hpp (D3Q19/SRT, arithmetic FP32)",
+        "model": "recorded static CFD force lookup + OpenRocket F32 plant + 100 Hz firmware loop",
+        "cfd": "Taichi D3Q19/SRT LBM on CUDA; legacy FP16S cases retained for offline fallback",
         "reference_flight": str(OR_CSV.relative_to(ROCKET)),
         "q_ref_pa": Q_REF, "cd0_cfd": aero["Cd0"],
         "drag_kd": aero["kd"], "drag_fit_rms_cd": aero["drag_rms"],
@@ -1174,7 +1174,7 @@ def main() -> None:
             "35 mm trapezoid surrogate overstated its area by ~2.46x.",
         ],
         "caveats": [
-            "Surrogate lookup from static 26 m/s FP16S CFD cases, not moving-boundary CFD.",
+            "Surrogate lookup from static 26 m/s CFD cases, not moving-boundary CFD.",
             "OpenRocket drag/thrust history is fixed-fin; fin drag is added via the CFD dCd.",
             "Servo lag, static stability and damping are analytic approximations, not measured.",
             "Fin-numbering / mixer cross-coupling still needs a physical check.",

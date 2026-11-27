@@ -16,6 +16,7 @@ INC = \
 	ao_pca9685.h \
 	ao_fat.h \
 	slx_profile.h \
+	slx_aero.h \
 	stm32f1.h \
 	Makefile
 
@@ -44,7 +45,8 @@ ALTOS_SRC = \
 	ao_bmp280.c \
 	ao_icm20689.c \
 	ao_pca9685.c \
-	slx_profile.c
+	slx_profile.c \
+	slx_aero.c
 
 PRODUCT=S-LX-F103
 PRODUCT_DEF=-DSLX_F103 -DFAT_COMMANDS=0
