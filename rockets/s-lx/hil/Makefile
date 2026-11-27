@@ -54,10 +54,10 @@ bridge: rtl $(PROFILE_OBJS)
 build: bridge
 
 run: build
-	./run.sh --backend cfd
+	./run.sh --backend cfd --out logs/cfd
 
 run-mujoco: build
-	./run.sh --backend mujoco
+	./run.sh --backend mujoco --out logs/mujoco
 
 vis:
 	python3 vis/server.py

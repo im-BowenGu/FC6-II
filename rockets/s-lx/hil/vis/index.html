@@ -63,6 +63,14 @@
   .events div { padding: 3px 0; border-bottom: 1px solid #1c2635; }
   .events .t { color: var(--muted); }
   .note { color: var(--muted); font-size: 10px; margin-top: 7px; }
+  .bars { display: grid; gap: 4px; margin-top: 8px; }
+  .bar { display: grid; grid-template-columns: 58px 1fr 58px; align-items: center;
+         gap: 7px; font-size: 10px; color: var(--muted); }
+  .bar .track { height: 8px; border-radius: 4px; background: #0f1620;
+                border: 1px solid var(--line); overflow: hidden; }
+  .bar .fill { display: block; height: 100%; width: 0; border-radius: 4px;
+               background: linear-gradient(90deg, var(--blue), var(--accent)); }
+  .bar .pct { text-align: right; color: var(--text); }
 </style>
 </head>
 <body>
@@ -83,6 +91,8 @@
     </div>
     <div class="panel"><h2>Actuator: command → actual</h2><canvas id="c-act"></canvas>
       <div class="legend" id="l-act"></div><div class="kv" id="actDetail"></div>
+      <div class="bars" id="servoBars"></div>
+      <div class="note">Progress is the completion of the latest 50 Hz latched move; it resets whenever a new target is latched.</div>
     </div>
     <div class="panel"><h2>Altitude</h2><canvas id="c-alt"></canvas>
       <div class="legend" id="l-alt"></div></div>
@@ -100,7 +110,7 @@ const STATES = ['BOOT','ARMED','READY','LAUNCH','GUIDED','DESCENT','LANDED','FAU
 const FAULTS = ['none','SD init','log open','PCA9685 init','BMP280 init','ICM20689 init','sensor read'];
 const COLORS = {
   alt: '#6ee7b7', plantAlt: '#2f7d63', pred: '#c084fc', ref: '#fbbf24',
-  cmd: '#60a5fa', act: '#6ee7b7', latch: '#c084fc',
+  cmd: '#60a5fa', act: '#6ee7b7', latch: '#c084fc', delay: '#f472b6',
   pitch: '#60a5fa', roll: '#f87171', yaw: '#c084fc',
   ax: '#60a5fa', ay: '#fbbf24', az: '#6ee7b7',
   drag: '#f87171', thrust: '#6ee7b7', moment: '#c084fc'
@@ -155,6 +165,8 @@ function renderState(d) {
     ['mass / thrust / drag', fmt(p.mass_kg,3)+' kg / '+fmt(p.thrust_n,1)+' / '+fmt(p.drag_n,1)+' N'],
     ['pitch moment', fmt(p.M_pitch_nm, 4)+' N·m'],
     ['servo model', `${fmt(act.pwm_hz,0)} Hz latch · ${fmt(act.tau_s,3)} s lag · ${fmt(act.rate_limit_dps,0)} °/s`],
+    ['command transport', `${fmt(act.transport_latency_ms,0)} ms (${act.transport_latency_ticks} tick)`],
+    ['aero lookup', `${fmt(r.aero && r.aero.eval_hz,0)} Hz · ${fmt((r.aero && r.aero.response_tau_s)*1000,0)} ms response`],
     ['CFD lookup', (r.aero && r.aero.source) || '—']
   ]);
 }
@@ -189,14 +201,26 @@ function renderPins(d) {
 }
 
 function renderActuator(d) {
-  const p = d.plant.latest || {};
+  const p = d.plant.latest || {}, b = d.bridge.latest || {};
+  const ids = [0,1,2,3];
+  const values = (key, digits=1) => ids.map(i=>fmt(p[key+i],digits)).join(' / ');
   document.getElementById('actDetail').innerHTML = kv([
-    ['guidance output', [0,1,2,3].map(i=>fmt(d.bridge.latest['fin'+i],1)).join(' / ')+' deg'],
-    ['50 Hz latched cmd', [0,1,2,3].map(i=>fmt(p['fin_cmd_deg'+i],1)).join(' / ')+' deg'],
-    ['actual fin angle', [0,1,2,3].map(i=>fmt(p['fin_act_deg'+i],1)).join(' / ')+' deg'],
-    ['fin slew rate', [0,1,2,3].map(i=>fmt(p['fin_rate_dps'+i],0)).join(' / ')+' °/s'],
-    ['PWM pulse widths', [0,1,2,3].map(i=>fmt(d.bridge.latest['pwm'+i+'_us'],0)).join(' / ')+' µs']
+    ['guidance output', ids.map(i=>fmt(b['fin'+i],1)).join(' / ')+' deg'],
+    ['after 10 ms delay', values('fin_delay_deg')+' deg'],
+    ['50 Hz latched target', values('fin_cmd_deg')+' deg'],
+    ['move from → to', ids.map(i=>
+      fmt(p['fin_move_from_deg'+i],1)+' → '+fmt(p['fin_move_to_deg'+i],1)).join(' / ')+' deg'],
+    ['actual fin angle', values('fin_act_deg')+' deg'],
+    ['fin slew rate', values('fin_rate_dps',0)+' °/s'],
+    ['CFD dCd raw → lagged', fmt(p.dCd_cfd_raw,4)+' → '+fmt(p.dCd_cfd,4)],
+    ['PWM pulse widths', ids.map(i=>fmt(b['pwm'+i+'_us'],0)).join(' / ')+' µs']
   ]);
+  document.getElementById('servoBars').innerHTML = ids.map(i => {
+    const pct = Math.max(0, Math.min(100, Number(p['fin_progress_pct'+i]) || 0));
+    return `<div class="bar"><span>fin ${i}</span>`+
+           `<span class="track"><span class="fill" style="width:${pct.toFixed(1)}%"></span></span>`+
+           `<span class="pct">${pct.toFixed(0)}%</span></div>`;
+  }).join('');
 }
 
 // Draw a chart. Each series supplies its own x array so bridge (firmware) and
@@ -264,6 +288,8 @@ function charts(d) {
   const actDefs = [];
   for (let i=0;i<4;i++) {
     actDefs.push({x:bt, vals:b['fin'+i], label:`cmd${i}`, color:COLORS.cmd});
+    actDefs.push({x:pt, vals:p['fin_delay_deg'+i], label:`delayed${i}`,
+                  color:COLORS.delay, dash:[2,2], width:1});
     actDefs.push({x:pt, vals:p['fin_cmd_deg'+i], label:`latched${i}`,
                   color:COLORS.latch, dash:[3,2], width:1});
     actDefs.push({x:pt, vals:p['fin_act_deg'+i], label:`actual${i}`,

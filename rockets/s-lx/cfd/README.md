@@ -92,7 +92,11 @@ moving-boundary/CFD-in-the-loop model.
 
 * Confirm physical fin numbering: `xmix_p15` couples pitch and yaw rather
   than producing pure pitch.
-* Measure hinge friction, servo lag and flutter on the bench; the simulator
-  uses a 50 Hz PCA9685 command latch, a 300 °/s slew limit, a first-order
-  35 ms lag and analytic damping. The recorded lookup is evaluated with the
-  resulting *actual* fin angles, not the instantaneous guidance command.
+* Measure hinge friction, servo latency, servo travel progress and flutter on
+  the bench. The simulator uses a 10 ms command transport delay, a 50 Hz
+  PCA9685 latch, a 300 °/s slew limit, a first-order 35 ms lag and analytic
+  damping; each latched move logs from/to angles and completion percentage.
+  The recorded lookup is evaluated at 100 Hz from the resulting *actual* fin
+  angles, not the instantaneous guidance command, and its force/drag/moment
+  increments pass through a 20 ms reduced-order response lag. That lag is a
+  flow-adjustment approximation, not a moving-boundary CFD solve.

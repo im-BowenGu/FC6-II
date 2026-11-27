@@ -43,11 +43,19 @@ PLANT_FIELDS = (
     "alt_m", "vz_mps", "pitch_deg", "roll_deg", "yaw_deg", "az_g",
     "drag_n", "thrust_n", "M_pitch_nm", "q_ratio", "fw_state",
     "mass_kg", "dCd_cfd",
-    # Transient actuator state: 50 Hz latched command vs actual fin angle.
+    # Transient actuator state: guidance -> delayed -> 50 Hz latch -> actual,
+    # with the from/to angles and completion percentage of the current move.
     "fin_cmd_deg0", "fin_cmd_deg1", "fin_cmd_deg2", "fin_cmd_deg3",
+    "fin_delay_deg0", "fin_delay_deg1", "fin_delay_deg2", "fin_delay_deg3",
+    "fin_move_from_deg0", "fin_move_from_deg1",
+    "fin_move_from_deg2", "fin_move_from_deg3",
+    "fin_move_to_deg0", "fin_move_to_deg1", "fin_move_to_deg2", "fin_move_to_deg3",
+    "fin_progress_pct0", "fin_progress_pct1",
+    "fin_progress_pct2", "fin_progress_pct3",
     "fin_act_deg0", "fin_act_deg1", "fin_act_deg2", "fin_act_deg3",
     "fin_rate_dps0", "fin_rate_dps1", "fin_rate_dps2", "fin_rate_dps3",
     "fw_fin_deg0", "fw_fin_deg1", "fw_fin_deg2", "fw_fin_deg3",
+    "dCd_cfd_raw", "M_pitch_cfd_raw_nm",
 )
 
 

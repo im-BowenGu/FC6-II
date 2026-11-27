@@ -12,8 +12,11 @@ This is a *coupled surrogate*, not a moving-boundary CFD solve:
     law (Rust `guidance-core` and the unchanged STM32 Arduino sketch):
     reference table, baro/accel vertical-speed estimate, 0-4 deg trim, X mix,
     rail hold and descent neutralisation.  Its fin commands pass through a
-    50 Hz PCA9685 latch and a slew-limited 35 ms servo lag before the aero
-    lookup, whose forces/moments close a 6-DOF-lite trajectory integration.
+    10 ms transport delay, a 50 Hz PCA9685 latch and a slew-limited 35 ms
+    servo lag before the recorded aero lookup is evaluated with the actual
+    fin angles.  A 20 ms reduced-order response lag keeps the steady-state
+    lookup from snapping instantly to a new geometry; this is not a
+    moving-boundary CFD solve.
 
 Outputs (in this directory):
   dynamic_flight.csv     100 Hz coupled telemetry, all four modes
@@ -82,7 +85,12 @@ VV_BARO_BLEND = 0.05
 SERVO_TAU_S = 0.035        # PCA9685 50 Hz + small analogue servo lag
 SERVO_PWM_HZ = 50.0        # PCA9685 frame rate: the command is latched, not continuous
 SERVO_RATE_DPS = 300.0     # conservative slew limit (60 deg in 0.2 s)
+SERVO_LATENCY_MS = 10.0    # one 100 Hz tick before a latched command reaches the servo
 SERVO_PWM_TICKS = max(1, int(round(1.0 / (DT * SERVO_PWM_HZ))))
+SERVO_LATENCY_TICKS = max(1, int(round(SERVO_LATENCY_MS / 1000.0 / DT)))
+# Reduced-order unsteady response for the recorded steady-state CFD lookup.
+# This is a flow-adjustment lag, not a moving-boundary solve.
+AERO_RESPONSE_TAU_S = 0.020
 CDA_PARA = 0.150           # 470 mm canopy, Cd ~0.865; gives ~8.1 m/s descent
 
 # Disturbance-rejection test: rail-exit attitude offset and recovery band.
@@ -103,6 +111,21 @@ DYNAMIC_MODES = {"guided", "guided_noise", "guided_tilt5", "guided_tilt5_noise"}
 
 def clamp(v: float, lo: float, hi: float) -> float:
     return lo if v < lo else (hi if v > hi else v)
+
+
+def first_order_alpha(tau_s: float) -> float:
+    """Discrete first-order coefficient for a 100 Hz fixed-step plant."""
+    if tau_s <= 0.0:
+        return 1.0
+    return clamp(DT / (tau_s + DT), 0.0, 1.0)
+
+
+def move_progress(actual: float, start: float, target: float) -> float:
+    """Percent of the latest latched servo move that has been completed."""
+    span = target - start
+    if abs(span) < 1e-9:
+        return 100.0
+    return clamp(100.0 * (actual - start) / span, 0.0, 100.0)
 
 
 def ref_at(t: float) -> tuple[float, float]:
@@ -452,8 +475,16 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
     z = vx = vy = vz = 0.0
     p = r = psi = p_rate = r_rate = psi_rate = 0.0
     fin_act = [0.0] * 4
+    fin_cmd_delayed = [0.0] * 4
+    pending_cmds: list[list[tuple[int, float]]] = [[] for _ in range(4)]
     fin_cmd_latched = [0.0] * 4
+    fin_move_from = [0.0] * 4
+    fin_move_to = [0.0] * 4
+    fin_move_start_s = [0.0] * 4
+    fin_progress_pct = [100.0] * 4
     fin_rate_dps = [0.0] * 4
+    aero_lp = {key: 0.0 for key in ("dCd", "Fy", "Fz", "Ty", "Tz", "Tx")}
+    aero_alpha = first_order_alpha(AERO_RESPONSE_TAU_S)
     max_z = 0.0
     recovered = False
     rows: list[dict] = []
@@ -474,6 +505,14 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
     for step in range(int(t_end / DT) + 1):
         t = step * DT
         t_ms = t * 1000.0
+
+        # Command transport latency: guidance commands issued on an earlier
+        # 100 Hz tick only reach the PCA9685 input after SERVO_LATENCY_TICKS.
+        # The queue is ordered by due step, so pop all commands due now and
+        # keep the newest one as the servo input for this tick.
+        for i in range(4):
+            while pending_cmds[i] and pending_cmds[i][0][0] <= step:
+                fin_cmd_delayed[i] = pending_cmds[i].pop(0)[1]
 
         # Rail exit: the launcher stops constraining the airframe, so a rail
         # or rigging error appears here as a step in body pitch/roll attitude.
@@ -512,13 +551,23 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
         else:
             fin_cmd = ctrl.update(t_ms, z, accel_body, rates, flying_armed=True)
 
-        # PCA9685 50 Hz command latch, then a slew-limited first-order actuator.
-        # The guidance output is not applied instantaneously: it is held for a
-        # full PWM frame, rate-limited like a real servo, and only then used to
-        # evaluate the recorded CFD lookup. Neutral is always reached in
-        # descent/fault because the guidance command itself goes to zero.
-        if step % SERVO_PWM_TICKS == 0:
-            fin_cmd_latched[:] = fin_cmd
+        # Queue this guidance output for the servo input after the transport
+        # delay, then latch it on the next 50 Hz PCA9685 frame. When a new
+        # target is latched, remember where each fin started so telemetry can
+        # report a real move-progress percentage rather than just the command.
+        for i in range(4):
+            pending_cmds[i].append((step + SERVO_LATENCY_TICKS, fin_cmd[i]))
+        if step % SERVO_PWM_TICKS == 0 and \
+                any(abs(fin_cmd_delayed[i] - fin_cmd_latched[i]) > 1e-9
+                    for i in range(4)):
+            for i in range(4):
+                fin_move_from[i] = fin_act[i]
+                fin_move_to[i] = fin_cmd_delayed[i]
+                fin_move_start_s[i] = t
+            fin_cmd_latched[:] = fin_cmd_delayed
+
+        # Slew-limited first-order actuator. The recorded CFD lookup is
+        # evaluated with these actual fin angles, never with the raw command.
         for i in range(4):
             target = fin_act[i] + (fin_cmd_latched[i] - fin_act[i]) * \
                 (DT / SERVO_TAU_S)
@@ -526,15 +575,21 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
                               -SERVO_RATE_DPS * DT, SERVO_RATE_DPS * DT)
             fin_act[i] += delta
             fin_rate_dps[i] = delta / DT
+            fin_progress_pct[i] = move_progress(
+                fin_act[i], fin_move_from[i], fin_move_to[i])
         d0, d1, d2, d3 = fin_act
         pitch_modal = (d0 - d2) / 2.0
         yaw_modal = (d1 - d3) / 2.0
         roll_modal = (d0 + d1 + d2 + d3) / 4.0
 
         q_ratio = (0.5 * rho * speed * speed) / Q_REF
-        # Per-fin sin^2 drag increment, referenced to the neutral CFD Cd.
+        # Per-fin sin^2 drag increment, referenced to the neutral CFD Cd. The
+        # lookup is steady-state, so its increments pass through a short
+        # reduced-order response lag before closing the 100 Hz plant loop.
         sin2_sum = sum(math.sin(math.radians(d)) ** 2 for d in fin_act) / math.sin(math.radians(FIN_REF_DEG)) ** 2
-        dCd = aero["kd"] * sin2_sum
+        dCd_raw = aero["kd"] * sin2_sum
+        aero_lp["dCd"] += aero_alpha * (dCd_raw - aero_lp["dCd"])
+        dCd = aero_lp["dCd"]
         if recovered:
             # After apogee the fin lookup is irrelevant: the motor's ejection
             # charge has deployed the parachute. Fit CdA to OR's terminal rate.
@@ -551,11 +606,13 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
         def modal_force(key: str) -> float:
             return (lin[key][0] * pitch_modal + lin[key][1] * yaw_modal
                     + lin[key][2] * roll_modal) * q_ratio
-        Fy_body = modal_force("Fy")
-        Fz_body = modal_force("Fz")
-        Tp = modal_force("Ty")  # pitch-plane moment, N.m at current q
-        Ttilt_n = modal_force("Tz")  # orthogonal transverse tilt
-        Troll = modal_force("Tx")    # axial spin
+        raw_forces = {key: modal_force(key) for key in ("Fy", "Fz", "Ty", "Tz", "Tx")}
+        for key, value in raw_forces.items():
+            aero_lp[key] += aero_alpha * (value - aero_lp[key])
+        Fy_body, Fz_body = aero_lp["Fy"], aero_lp["Fz"]
+        Tp = aero_lp["Ty"]     # pitch-plane moment, N.m at current q
+        Ttilt_n = aero_lp["Tz"]  # orthogonal transverse tilt
+        Troll = aero_lp["Tx"]    # axial spin
 
         # Body-axis yaw moment is about the vertical; pitch/roll moments tilt it.
         lat_vec = (Fy_body * by[0] + Fz_body * bz[0],
@@ -653,8 +710,20 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
             "roll_rate_dps": math.degrees(r_rate),
             "yaw_rate_dps": math.degrees(psi_rate),
             "fin0_deg": d0, "fin1_deg": d1, "fin2_deg": d2, "fin3_deg": d3,
+            "fin_guid0_deg": fin_cmd[0], "fin_guid1_deg": fin_cmd[1],
+            "fin_guid2_deg": fin_cmd[2], "fin_guid3_deg": fin_cmd[3],
             "fin_cmd0_deg": fin_cmd_latched[0], "fin_cmd1_deg": fin_cmd_latched[1],
             "fin_cmd2_deg": fin_cmd_latched[2], "fin_cmd3_deg": fin_cmd_latched[3],
+            "fin_delay0_deg": fin_cmd_delayed[0], "fin_delay1_deg": fin_cmd_delayed[1],
+            "fin_delay2_deg": fin_cmd_delayed[2], "fin_delay3_deg": fin_cmd_delayed[3],
+            "fin_move_from0_deg": fin_move_from[0], "fin_move_from1_deg": fin_move_from[1],
+            "fin_move_from2_deg": fin_move_from[2], "fin_move_from3_deg": fin_move_from[3],
+            "fin_move_to0_deg": fin_move_to[0], "fin_move_to1_deg": fin_move_to[1],
+            "fin_move_to2_deg": fin_move_to[2], "fin_move_to3_deg": fin_move_to[3],
+            "fin_move_start0_s": fin_move_start_s[0], "fin_move_start1_s": fin_move_start_s[1],
+            "fin_move_start2_s": fin_move_start_s[2], "fin_move_start3_s": fin_move_start_s[3],
+            "fin_progress0_pct": fin_progress_pct[0], "fin_progress1_pct": fin_progress_pct[1],
+            "fin_progress2_pct": fin_progress_pct[2], "fin_progress3_pct": fin_progress_pct[3],
             "fin_rate0_dps": fin_rate_dps[0], "fin_rate1_dps": fin_rate_dps[1],
             "fin_rate2_dps": fin_rate_dps[2], "fin_rate3_dps": fin_rate_dps[3],
             "pitch_modal_deg": pitch_modal, "yaw_modal_deg": yaw_modal,
@@ -665,8 +734,9 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
             "f_up_g": f_up, "accel_pitch_deg": synth_pitch_accel,
             "accel_roll_deg": synth_roll_accel,
             "yaw_geom_deg": yaw_modal,
-            "q_ratio": q_ratio, "dCd_cfd": dCd, "drag_n": drag,
-            "thrust_n": thrust, "mass_kg": mass, "state": ctrl.state,
+            "q_ratio": q_ratio, "dCd_cfd_raw": dCd_raw, "dCd_cfd": dCd,
+            "M_pitch_cfd_raw_nm": raw_forces["Ty"],
+            "drag_n": drag, "thrust_n": thrust, "mass_kg": mass, "state": ctrl.state,
             "M_pitch_nm": M_p, "M_yaw_nm": M_r, "M_roll_nm": M_roll,
         })
         if z <= 0.0 and t > 3.0:
@@ -1013,6 +1083,16 @@ def write_logs(runs: dict[str, list[dict]], summaries: dict[str, dict],
         "simulator": "run_dynamic_sim.py",
         "plant": "OpenRocket F32 + recorded static fin lookup",
         "loop_hz": 1.0 / DT,
+        "actuator": {
+            "pwm_hz": SERVO_PWM_HZ, "tau_s": SERVO_TAU_S,
+            "transport_latency_ms": SERVO_LATENCY_MS,
+            "transport_latency_ticks": SERVO_LATENCY_TICKS,
+            "rate_limit_dps": SERVO_RATE_DPS,
+        },
+        "aero": {
+            "eval_hz": 1.0 / DT, "response_tau_s": AERO_RESPONSE_TAU_S,
+            "model": "recorded steady-state lookup + reduced-order response lag",
+        },
         "cfd_samples": [s["name"] for s in aero["samples"]],
         "kd": aero["kd"], "cd0": aero["Cd0"], "drag_rms": aero["drag_rms"],
         "linear_aero_per_deg_at_qref": aero["linear"],
@@ -1125,7 +1205,9 @@ def main() -> None:
                 w.writerow({"mode": mode, **row})
 
     summary = {
-        "model": "recorded static CFD force lookup + OpenRocket F32 plant + 100 Hz firmware loop",
+        "model": "recorded static CFD force lookup evaluated at 100 Hz with "
+                 "actual fin angles, a 20 ms reduced-order response lag, "
+                 "OpenRocket F32 plant and 100 Hz firmware loop",
         "cfd": "Taichi D3Q19/SRT LBM on CUDA; legacy FP16S cases retained for offline fallback",
         "reference_flight": str(OR_CSV.relative_to(ROCKET)),
         "q_ref_pa": Q_REF, "cd0_cfd": aero["Cd0"],
@@ -1177,6 +1259,14 @@ def main() -> None:
             f"{gn['tilt_error_at_burnout_deg']:.2f} deg at burnout and band entry at "
             f"{rec_str(gn)}; the estimator starts at zero attitude at ignition, so "
             "recovery includes accel/gyro convergence, not just fin authority.",
+            f"The recorded CFD lookup is evaluated every 10 ms ({1.0 / DT:.0f} Hz) "
+            f"from the actual fin angles. Guidance commands wait "
+            f"{SERVO_LATENCY_MS:.0f} ms before the 50 Hz PCA9685 latch, and each "
+            f"latched move logs its from/to angles and completion percentage.",
+            f"The lookup's force/drag/moment increments pass through a "
+            f"{AERO_RESPONSE_TAU_S * 1000.0:.0f} ms first-order response lag so they "
+            "do not snap instantly to a new fin geometry. The GPU sweep stays "
+            "offline; no Taichi solve runs inside the 100 Hz loop.",
             f"Coast weathervane rule: after burnout, once estimated body tilt exceeds "
             f"{COAST_WEATHERVANE_TILT_DEG:.1f} deg, centre the fins and let static "
             "stability align the body with the flight path.",
@@ -1197,7 +1287,10 @@ def main() -> None:
         "caveats": [
             "Surrogate lookup from static 26 m/s CFD cases, not moving-boundary CFD.",
             "OpenRocket drag/thrust history is fixed-fin; fin drag is added via the CFD dCd.",
-            "Servo lag, static stability and damping are analytic approximations, not measured.",
+            "Servo transport latency, slew/lag, move progress, aero response lag, "
+            "static stability and damping are analytic approximations, not measured.",
+            "The 20 ms aero lag emulates flow adjustment after a fin move; it is not "
+            "a moving-boundary CFD solve and cannot predict unsteady separation.",
             "Fin-numbering / mixer cross-coupling still needs a physical check.",
             "The rail-exit tilt is a 5 deg attitude step at 300 ms with zero rate; "
             "real launcher tilt, fin rigging error and rail reaction loads are not modelled.",

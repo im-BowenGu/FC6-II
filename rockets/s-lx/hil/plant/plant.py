@@ -8,9 +8,11 @@ the Verilated peripheral + real STM32 guidance core. Two backends:
   cfd     - OpenRocket F32 plant + recorded static fin lookup (validated surrogate)
   mujoco  - MuJoCo integrates the attitude joints with the same CFD moments
 
-Both backends use the same transient actuator model: a 50 Hz PCA9685 command
-latch, 300 deg/s slew limit and 35 ms first-order servo lag; the CFD lookup is
-evaluated with the actual fin angles.
+Both backends use the same transient actuator model: a 10 ms command transport
+delay, a 50 Hz PCA9685 latch, 300 deg/s slew limit and 35 ms first-order servo
+lag. Each latched move records its from/to angles and completion percentage,
+and the recorded CFD lookup is evaluated with the actual fin angles through a
+20 ms reduced-order response lag.
 
 This is the *plant*, not an avionics port: the guidance loop is the actual C
 core in the C++ bridge.
@@ -45,6 +47,9 @@ SERVO_TAU_S = slxsim.SERVO_TAU_S
 SERVO_PWM_HZ = slxsim.SERVO_PWM_HZ
 SERVO_RATE_DPS = slxsim.SERVO_RATE_DPS
 SERVO_PWM_TICKS = slxsim.SERVO_PWM_TICKS
+SERVO_LATENCY_MS = slxsim.SERVO_LATENCY_MS
+SERVO_LATENCY_TICKS = slxsim.SERVO_LATENCY_TICKS
+AERO_RESPONSE_TAU_S = slxsim.AERO_RESPONSE_TAU_S
 
 
 class MujocoAttitude:
@@ -100,12 +105,23 @@ def plant_step(state: dict, cmd: list[float], or_data: dict, aero: dict,
     by = (math.cos(p), 0.0, -math.sin(p))
     bz = (-math.sin(p) * math.sin(r), math.cos(r), -math.cos(p) * math.sin(r))
 
-    # Same transient actuator model as the 100 Hz surrogate: the PCA9685
-    # latches the guidance command at 50 Hz, the servo slews at a finite rate,
-    # and a first-order lag gives the mechanical response. The CFD lookup is
-    # then evaluated with the *actual* fin positions, not the raw command.
-    if state["pwm_tick"] % SERVO_PWM_TICKS == 0:
-        state["pwm_cmd"][:] = cmd
+    # Same transient actuator model as the 100 Hz surrogate: a transport delay
+    # before the PCA9685 input, a 50 Hz latch, finite slew and a first-order
+    # mechanical lag. Each latched target change records where the move began
+    # so the GUI can show a real completion percentage.
+    for i in range(4):
+        pending = state["pending_cmds"][i]
+        while pending and pending[0][0] <= state["pwm_tick"]:
+            state["fin_delayed"][i] = pending.pop(0)[1]
+        pending.append((state["pwm_tick"] + SERVO_LATENCY_TICKS, cmd[i]))
+    if state["pwm_tick"] % SERVO_PWM_TICKS == 0 and \
+            any(abs(state["fin_delayed"][i] - state["pwm_cmd"][i]) > 1e-9
+                for i in range(4)):
+        for i in range(4):
+            state["fin_move_from"][i] = state["fin_act"][i]
+            state["fin_move_to"][i] = state["fin_delayed"][i]
+            state["fin_move_start_s"][i] = t
+        state["pwm_cmd"][:] = state["fin_delayed"]
     state["pwm_tick"] += 1
     fin = state["fin_act"]
     for i in range(4):
@@ -114,6 +130,8 @@ def plant_step(state: dict, cmd: list[float], or_data: dict, aero: dict,
                     min(SERVO_RATE_DPS * DT, target - fin[i]))
         fin[i] += delta
         state["fin_rate_dps"][i] = delta / DT
+        state["fin_progress_pct"][i] = slxsim.move_progress(
+            fin[i], state["fin_move_from"][i], state["fin_move_to"][i])
     pitch_modal = (fin[0] - fin[2]) / 2.0
     yaw_modal = (fin[1] - fin[3]) / 2.0
     roll_modal = sum(fin) / 4.0
@@ -121,7 +139,10 @@ def plant_step(state: dict, cmd: list[float], or_data: dict, aero: dict,
     q_ratio = (0.5 * rho * speed * speed) / slxsim.Q_REF
     sin2 = sum(math.sin(math.radians(d)) ** 2 for d in fin) / \
         math.sin(math.radians(slxsim.FIN_REF_DEG)) ** 2
-    dCd = aero["kd"] * sin2
+    dCd_raw = aero["kd"] * sin2
+    lp = state["aero_lp"]
+    lp["dCd"] += state["aero_alpha"] * (dCd_raw - lp["dCd"])
+    dCd = lp["dCd"]
     drag = (0.5 * rho * speed * speed * slxsim.CDA_PARA if state["recovered"]
             else D0 * (aero["Cd0"] + dCd) / aero["Cd0"])
     drag_vec = tuple(-drag * c / speed for c in
@@ -133,8 +154,11 @@ def plant_step(state: dict, cmd: list[float], or_data: dict, aero: dict,
         return (lin[key][0] * pitch_modal + lin[key][1] * yaw_modal +
                 lin[key][2] * roll_modal) * q_ratio
 
-    Fy_body, Fz_body = modal_force("Fy"), modal_force("Fz")
-    Tp, Ttilt_n, Troll = modal_force("Ty"), modal_force("Tz"), modal_force("Tx")
+    raw_forces = {key: modal_force(key) for key in ("Fy", "Fz", "Ty", "Tz", "Tx")}
+    for key, value in raw_forces.items():
+        lp[key] += state["aero_alpha"] * (value - lp[key])
+    Fy_body, Fz_body = lp["Fy"], lp["Fz"]
+    Tp, Ttilt_n, Troll = lp["Ty"], lp["Tz"], lp["Tx"]
     lat_vec = (Fy_body * by[0] + Fz_body * bz[0],
                Fy_body * by[1] + Fz_body * bz[1],
                Fy_body * by[2] + Fz_body * bz[2])
@@ -200,9 +224,15 @@ def plant_step(state: dict, cmd: list[float], or_data: dict, aero: dict,
         "gx_dps": math.degrees(p_rate), "gy_dps": math.degrees(r_rate),
         "gz_dps": math.degrees(psi_rate), "q_ratio": q_ratio,
         "fin_act_deg": list(fin), "fin_cmd_deg": list(state["pwm_cmd"]),
+        "fin_delay_deg": list(state["fin_delayed"]),
+        "fin_move_from_deg": list(state["fin_move_from"]),
+        "fin_move_to_deg": list(state["fin_move_to"]),
+        "fin_move_start_s": list(state["fin_move_start_s"]),
+        "fin_progress_pct": list(state["fin_progress_pct"]),
         "fin_rate_dps": list(state["fin_rate_dps"]),
         "drag_n": drag, "mass_kg": mass,
-        "thrust_n": thrust, "dCd_cfd": dCd, "M_pitch_nm": M_p,
+        "thrust_n": thrust, "dCd_cfd_raw": dCd_raw, "dCd_cfd": dCd,
+        "M_pitch_cfd_raw_nm": raw_forces["Ty"], "M_pitch_nm": M_p,
     }
 
 
@@ -242,7 +272,13 @@ def main() -> int:
         "p": 0.0, "r": 0.0, "psi": 0.0,
         "p_rate": 0.0, "r_rate": 0.0, "psi_rate": 0.0,
         "fin_act": [0.0] * 4, "pwm_cmd": [0.0] * 4,
+        "fin_delayed": [0.0] * 4,
+        "pending_cmds": [[] for _ in range(4)],
+        "fin_move_from": [0.0] * 4, "fin_move_to": [0.0] * 4,
+        "fin_move_start_s": [0.0] * 4, "fin_progress_pct": [100.0] * 4,
         "fin_rate_dps": [0.0] * 4, "pwm_tick": 0,
+        "aero_lp": {key: 0.0 for key in ("dCd", "Fy", "Fz", "Ty", "Tz", "Tx")},
+        "aero_alpha": slxsim.first_order_alpha(AERO_RESPONSE_TAU_S),
         "recovered": False, "max_z": 0.0,
         "tilt_deg": args.tilt, "tilt_applied": False,
     }
@@ -275,12 +311,13 @@ def main() -> int:
             events.append({"t_s": round(state["t"], 3), "from": last_state,
                            "to": f["state"], "alt_m": round(state["z"], 2)})
             last_state = f["state"]
-        row = {k: v for k, v in published.items()
-               if k not in ("fin_act_deg", "fin_cmd_deg", "fin_rate_dps")}
+        list_fields = ("fin_act_deg", "fin_cmd_deg", "fin_delay_deg",
+                       "fin_move_from_deg", "fin_move_to_deg",
+                       "fin_move_start_s", "fin_progress_pct", "fin_rate_dps")
+        row = {k: v for k, v in published.items() if k not in list_fields}
         for i in range(4):
-            row[f"fin_act_deg{i}"] = published["fin_act_deg"][i]
-            row[f"fin_cmd_deg{i}"] = published["fin_cmd_deg"][i]
-            row[f"fin_rate_dps{i}"] = published["fin_rate_dps"][i]
+            for key in list_fields:
+                row[f"{key}{i}"] = published[key][i]
             row[f"fw_fin_deg{i}"] = f[f"fin_cmd_deg{i}"]
         row["fw_state"] = f["state"]
         rows.append(row)
@@ -307,12 +344,16 @@ def main() -> int:
         "backend": args.backend, "tilt_deg": args.tilt, "wind_mps": args.wind,
         "apogee_m": round(state["max_z"], 2), "duration_s": round(state["t"], 2),
         "aero": {"source": aero_source, "kd": aero["kd"],
-                 "cd0": aero["Cd0"], "rms": aero["drag_rms"]},
+                 "cd0": aero["Cd0"], "rms": aero["drag_rms"],
+                 "eval_hz": 1.0 / DT, "response_tau_s": AERO_RESPONSE_TAU_S,
+                 "model": "recorded steady-state lookup + reduced-order response lag"},
         "actuator": {
             "pwm_hz": SERVO_PWM_HZ, "tau_s": SERVO_TAU_S,
+            "transport_latency_ms": SERVO_LATENCY_MS,
+            "transport_latency_ticks": SERVO_LATENCY_TICKS,
             "rate_limit_dps": SERVO_RATE_DPS,
-            "model": "50 Hz command latch + slew-limited first-order servo; "
-                     "CFD lookup uses actual fin angles",
+            "model": "10 ms transport delay + 50 Hz latch + slew-limited "
+                     "first-order servo; CFD lookup uses actual fin angles",
         },
         "note": "guidance is the real C core in cpp/bridge.cpp, not a Python port",
     }, indent=2) + "\n")
