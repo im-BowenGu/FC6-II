@@ -58,6 +58,11 @@ aero:
   reference_cd0: 1.233524
   fit_inputs: sim/data/cfd/fluidx3d/logs/*_force.csv
   fit_manifest: sim/data/cfd/fluidx3d/configs/manifest.json
+  live_sweep: cfd/run_live_cfd.py
+  live_inputs: cfd/fluidx3d/{defines.hpp,setup.cpp,UKROC_2027_cfd.stl,configs/*.stl}
+  live_output: build/cfd/motion.json
+  live_runner: self-hosted, label fluidx3d-opencl; env FLUIDX3D_SRC, OCL_LIB, ICD
+  replay_command: sim/run_dynamic_sim.py --check --motion build/cfd/motion.json
   excluded_from_fit: [xmix_p4, xmix_p8]
   exclusion_reason: 4 deg deflection is below the 5.38 mm voxel scale
   canopy_cda_m2: 0.150
@@ -84,7 +89,8 @@ models:
 verification:
   host_tests: tests/test_ukroc_profile.c
   simulator: sim/run_dynamic_sim.py
-  pr_command: make -C rockets/ukroc-2027 test
+  pr_command: make -C rockets/ukroc-2027 cfd-test
+  offline_command: make -C rockets/ukroc-2027 test
   checks:
     - nominal guided apogee within 229 +/- 5 m
     - nominal duration within 34-37 s

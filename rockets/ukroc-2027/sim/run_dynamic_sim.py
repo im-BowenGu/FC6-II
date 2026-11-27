@@ -185,26 +185,37 @@ def cfd_final_force(csv_path: Path) -> dict[str, float] | None:
     return {k: number(last[k]) for k in ("Fx_N", "Fy_N", "Fz_N", "Tx_Nm", "Ty_Nm", "Tz_Nm", "Cd")}
 
 
-def read_cfd_lookup() -> dict:
+def read_cfd_lookup(configs: list[str] | None = None, steps: int = 20000) -> dict:
+    """Fit the recorded fin-state force logs into a motion lookup.
+
+    `configs` lets the live-CFD PR check fit only the states it actually
+    solved. The 4/8 deg rows are validation-only: their deflection is below
+    one voxel at 5.38 mm resolution, so they are excluded from the fit even
+    when present.
+    """
     manifest_path = FLUID / "configs" / "manifest.json"
     manifest = json.loads(manifest_path.read_text())
-    configs = ["neutral", "pitch_p15", "pitch_n15", "yaw_p15", "yaw_n15",
-               "roll_p15", "roll_n15", "xmix_p15"]
+    selected = configs or ["neutral", "pitch_p15", "pitch_n15", "yaw_p15",
+                          "yaw_n15", "roll_p15", "roll_n15", "xmix_p15"]
     samples: list[dict] = []
-    for name in configs:
+    for name in selected:
+        if name in ("xmix_p4", "xmix_p8"):
+            continue
         force = cfd_final_force(FLUID / "logs" / f"{name}_force.csv")
         if force is None:
             continue
         d = manifest[name]["main_fin_deflection_deg"]
         defs = [float(d[str(a)]) for a in (0, 90, 180, 270)]
-        samples.append(make_sample(name, defs, force, steps=20000))
-    for name, steps in (("xmix_p4", 12000), ("xmix_p8", 12000)):
+        samples.append(make_sample(name, defs, force, steps=steps))
+    for name in ("xmix_p4", "xmix_p8"):
+        if name not in selected:
+            continue
         force = cfd_final_force(FLUID / "logs" / f"{name}_force.csv")
         if force is None:
             continue
         deg = 4.0 if "p4" in name else 8.0
         defs = [deg, -deg, -deg, deg]
-        samples.append(make_sample(name, defs, force, steps))
+        samples.append(make_sample(name, defs, force, steps=12000))
 
     base = next(s for s in samples if s["name"] == "neutral")
     for s in samples:
@@ -217,7 +228,9 @@ def read_cfd_lookup() -> dict:
     # Fit only the original 15 deg sweep. The 4/8 deg reruns are kept as
     # validation rows: at 5.38 mm voxels a 4 deg plate deflection is smaller
     # than one cell, so those forces are dominated by voxel quantisation.
-    fit_samples = [s for s in samples if s["steps"] == 20000]
+    fit_steps = max(s["steps"] for s in samples
+                    if s["name"] not in ("xmix_p4", "xmix_p8"))
+    fit_samples = [s for s in samples if s["steps"] == fit_steps]
     X = [[s["pitch"], s["yaw"], s["roll"]] for s in fit_samples]
     fits = {}
     for key in ("Fx", "Fy", "Fz", "Tx", "Ty", "Tz"):
@@ -901,11 +914,43 @@ def check_summaries(summaries: dict[str, dict], aero: dict) -> None:
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
+def cli_option(name: str) -> str | None:
+    if name in sys.argv:
+        i = sys.argv.index(name)
+        if i + 1 < len(sys.argv):
+            return sys.argv[i + 1]
+        raise SystemExit(f"{name} needs a value")
+    return None
+
+
 def main() -> None:
+    global FLUID
+    cfd_dir = cli_option("--cfd-dir")
+    if cfd_dir:
+        FLUID = Path(cfd_dir)
+    motion_path = cli_option("--motion")
+    dump_path = cli_option("--dump-lookup")
+    cfd_configs_raw = cli_option("--cfd-configs")
+    cfd_steps_raw = cli_option("--cfd-steps")
+
     if not OR_CSV.exists():
         raise SystemExit(f"Missing OpenRocket reference flight: {OR_CSV}")
     or_data = read_or_flight(OR_CSV)
-    aero = read_cfd_lookup()
+    if motion_path:
+        # Recorded motion: coefficients fitted once from a CFD sweep. The
+        # 100 Hz trajectory loop never invokes the flow solver.
+        aero = json.loads(Path(motion_path).read_text())
+    else:
+        selected = ([c.strip() for c in cfd_configs_raw.split(",") if c.strip()]
+                    if cfd_configs_raw else None)
+        aero = read_cfd_lookup(selected,
+                               int(cfd_steps_raw) if cfd_steps_raw else 20000)
+    if dump_path:
+        out = Path(dump_path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(aero, indent=2) + "\n")
+        print(f"Recorded CFD motion lookup: {out}")
+        return
     print(f"CFD samples: {', '.join(s['name'] for s in aero['samples'])}")
     print(f"FP16S drag scale kd = {aero['kd']:.4f}, Cd0 = {aero['Cd0']:.5f}, "
           f"drag fit RMS = {aero['drag_rms']:.4f}")

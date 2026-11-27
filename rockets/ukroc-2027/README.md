@@ -17,7 +17,7 @@ stack in the main rocket project is untouched.
 | `model.yaml` | rough model manifest: dimensions, motor, target, aero inputs, CAD references |
 | `cad/`, `cfd/` | OpenRocket models, fin STL, movable-fin state table and roadmap |
 | `sim/` | self-contained 100 Hz firmware-in-the-loop trajectory surrogate |
-| `Makefile` | `make test` = host tests + PR altitude/scenario checks |
+| `Makefile` | `make test` = offline host tests + PR checks; `make cfd-test` = live fin-state CFD + recorded-motion flight check |
 
 The flight target lives at `src/ukroc-bluepill-f103/` and is appended to
 `ARMM3DIRS` only for this rocket. It uses three new shared drivers
@@ -65,14 +65,25 @@ commercial parts, while the assembled controller is specific to this rocket.
 ## Build and verify
 
 ```sh
-make -C rockets/ukroc-2027 test     # host C tests + simulator PR check
+make -C rockets/ukroc-2027 test     # offline: host C tests + frozen-lookup sim
+make -C rockets/ukroc-2027 cfd-test # live CFD sweep, then recorded-motion sim
 make -C src/ukroc-bluepill-f103 ROCKET=ukroc-2027   # ARM flight target
 ```
+
+`cfd-test` runs FluidX3D once per selected fin state (eight states by
+default, 20k steps each), writes the force/torque history to
+`build/cfd/logs/`, fits it into `build/cfd/motion.json`, then runs the real
+100 Hz firmware loop against **that recorded lookup**. The flight loop never
+calls the flow solver. Requires an OpenCL device and `FLUIDX3D_SRC`, plus
+`OCL_LIB`/`ICD` if the runner needs explicit ICD paths; a small smoke sweep
+is `make cfd-record CFD_ARGS="--configs neutral,pitch_p15 --steps 2000"`.
+The committed `sim/data/` CSVs remain the offline fallback for `make test`.
 
 The GitHub Actions definition is stored as `ci/rocket-profile.yml` in this
 profile directory. Copy it to `.github/workflows/rocket-profile.yml` in the
 PR branch (needs a token with `workflow` scope; this fork's OAuth token does
-not have it). It runs `make -C rockets/ukroc-2027 test` and a guard that
+not have it). The CFD job runs on a self-hosted `fluidx3d-opencl` runner
+because GitHub-hosted runners have no OpenCL device; a separate Ubuntu job
 fails the PR if any upstream file is deleted or `README.md` changes.
 
 The simulator check prints all eight modes and asserts:

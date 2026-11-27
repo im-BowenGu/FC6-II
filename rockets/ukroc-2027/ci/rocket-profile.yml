@@ -7,13 +7,16 @@ on:
 
 jobs:
   ukroc-2027:
-    name: UKROC 2027 firmware + trajectory gate
-    runs-on: ubuntu-latest
+    name: UKROC 2027 firmware + live CFD trajectory gate
+    # FluidX3D needs OpenCL; GitHub-hosted runners have no usable device.
+    # The runner must expose FLUIDX3D_SRC (FluidX3D checkout with src/ and
+    # makefile) and, if needed, OCL_LIB / ICD for the OpenCL ICD.
+    runs-on: [self-hosted, fluidx3d-opencl]
     steps:
       - uses: actions/checkout@v4
 
-      - name: Profile host tests, manifest and trajectory checks
-        run: make -C rockets/ukroc-2027 test
+      - name: Host tests, live fin-state CFD and recorded-motion flight check
+        run: make -C rockets/ukroc-2027 cfd-test
 
   additive-guard:
     name: PR must not delete upstream files
