@@ -19,7 +19,6 @@ dnl Process this file with autoconf to create configure.
 
 AC_PREREQ(2.57)
 AC_INIT([altos], 1.9.22)
-ANDROID_VERSION=37
 AC_CONFIG_SRCDIR([src/kernel/ao.h])
 AM_INIT_AUTOMAKE([foreign dist-bzip2])
 AM_MAINTAINER_MODE
@@ -33,202 +32,14 @@ AC_SUBST(DOC_DATE)
 
 VERSION_DASH=`echo $VERSION | sed 's/\./-/g'`
 AC_SUBST(VERSION_DASH)
-AC_SUBST(ANDROID_VERSION)
-
-dnl ==========================================================================
-dnl Java library versions
-
-ALTOSUILIB_VERSION=14
-ALTOSLIB_VERSION=14
-
-AC_SUBST(ALTOSLIB_VERSION)
-AC_DEFINE(ALTOSLIB_VERSION,$ALTOSLIB_VERSION,[Version of the AltosLib package])
-AC_SUBST(ALTOSUILIB_VERSION)
-AC_DEFINE(ALTOSUILIB_VERSION,$ALTOSUILIB_VERSION,[Version of the AltosUILib package])
-
-dnl ==========================================================================
 
 AM_CONFIG_HEADER(config.h)
-
-AC_ARG_WITH(freetts, AS_HELP_STRING([--with-freetts=PATH],
-	[Set freetts class path (default /usr/share/java)]),
-	[FREETTS=$withval], [FREETTS=/usr/share/java])
-
-AC_SUBST(FREETTS)
-
-AC_ARG_WITH(jfreechart, AS_HELP_STRING([--with-jfreechart=PATH],
-	[Set jfreechart class path (default /usr/share/java)]),
-	[JFREECHART=$withval], [JFREECHART=/usr/share/java])
-
-AC_SUBST(JFREECHART)
-
-AC_ARG_WITH(jcommon, AS_HELP_STRING([--with-jcommon=PATH],
-	[Set jcommon class path (default /usr/share/java)]),
-	[JCOMMON=$withval], [JCOMMON=/usr/share/java])
-
-AC_SUBST(JCOMMON)
-
-AC_ARG_WITH(jvm, AS_HELP_STRING([--with-jvm=PATH],
-	[Set jvm path for java builds (default searches in /usr/lib/jvm)]),
-	[JVM=$withval], [JVM=auto])
-
-if test "x$JVM" = "xauto"; then
-	AC_MSG_CHECKING([JVM])
-	for jvm in default-java java-8-openjdk java-9-openjdk java-10-openjdk java-11-openjdk java-12-openjdk java-13-openjdk java-8-openjdk-amd64; do
-		if test "x$JVM" = "xauto"; then
-			INCLUDE="/usr/lib/jvm/$jvm/include"
-			if test -f "$INCLUDE"/jni.h; then
-				JVM=/usr/lib/jvm/"$jvm"
-			fi
-		fi
-	done
-	if test "x$JVM" = "xauto"; then
-		AC_MSG_ERROR([no JVM files found])
-	fi
-	AC_MSG_RESULT([$JVM])
-fi
-
-AC_ARG_WITH(java-version, AS_HELP_STRING([--with-java-version=8],
-					 [Set java language compatibility version (default is 8)]),
-	   [JAVA_VERSION=$withval], [JAVA_VERSION=8])
-
-JAVAC="$JVM"/bin/javac
-JAVA="$JVM"/bin/java
-JVM_INCLUDE="$JVM"/include
-JAVAC_VERSION_FLAGS="-target 1.$JAVA_VERSION -source 1.$JAVA_VERSION"
-
-AC_SUBST(JAVAC)
-AC_SUBST(JAVA)
-AC_SUBST(JVM)
-AC_SUBST(JVM_INCLUDE)
-AC_SUBST(JAVAC_VERSION_FLAGS)
-
-
-AC_ARG_WITH(android, AS_HELP_STRING([--with-android=PATH],
-	[Set android SDK path (default searches in a variety of places)]),
-	[ANDROID_SDK=$withval], [ANDROID_SDK=${ANDROID_SDK:-auto}])
-
-if test "x$ANDROID_SDK" = "xauto"; then
-	AC_MSG_CHECKING([Android SDK])
-	for sdk in ../android/android-sdk-linux ../android/android-sdk ../android-sdk ../android-sdk-linux $HOME/android; do
-		if test "x$ANDROID_SDK" = "xauto"; then
-			SDK="$sdk"
-			if test -f "$SDK/SDK Readme.txt"; then
-				ANDROID_SDK=`readlink -m "$SDK"`
-			fi
-		fi
-	done
-	if test "x$ANDROID_SDK" = "xauto"; then
-		AC_MSG_NOTICE([no Android SDK found])
-		ANDROID_SDK=no
-	fi
-	AC_MSG_RESULT([$ANDROID_SDK])
-fi
-if test "x$ANDROID_SDK" != "xno"; then
-	AC_MSG_CHECKING([Android SDK version])
-	SDK_VERSION=`grep -i '^Pkg.Revision=' $ANDROID_SDK/tools/source.properties | cut -f2- -d= | sed s/^r//`
-	SDK_MAJOR_VERSION="`echo $SDK_VERSION | sed 's/[[^0-9]].*//'`"
-	if test "$SDK_MAJOR_VERSION" -lt 17 ; then
-		AC_MSG_NOTICE([SDK version $SDK_VERSION is too old. Need >= r17])
-		ANDROID_SDK=no
-	else
-		AC_MSG_RESULT([$SDK_VERSION])
-	fi
-fi
-if test "x$ANDROID_SDK" != "xno"; then
-	AC_MSG_CHECKING([Android SDK API Level])
-	if test -f "$ANDROID_SDK/platforms/android-10/source.properties"; then
-		API_LEVEL=`sed -ne 's/^AndroidVersion.ApiLevel=//p' $ANDROID_SDK/platforms/android-10/source.properties`
-		if test "$API_LEVEL" = "10"; then
-			AC_MSG_RESULT([$API_LEVEL])
-		else
-			AC_MSG_NOTICE([API Level 10 not installed correctly.])
-			ANDROID_SDK=no
-		fi
-	else
-		AC_MSG_NOTICE([API Level 10 not installed, but is required.])
-		ANDROID_SDK=no
-	fi
-fi
-if test "x$ANDROID_SDK" != "xno"; then
-	AC_MSG_CHECKING([Android SDK required extras])
-	if test -f "$ANDROID_SDK/extras/android/support/source.properties"; then
-		ANDROID_SUPPORT_LIB_NAME=`sed -ne 's/^Extra.NameDisplay=//p' $ANDROID_SDK/extras/android/support/source.properties`
-		if test -f "$ANDROID_SDK/extras/google/google_play_services/source.properties"; then
-			GOOGLE_PLAY_SERVICES_NAME=`sed -ne 's/^Extra.NameDisplay=//p' $ANDROID_SDK/extras/google/google_play_services/source.properties`
-			AC_MSG_RESULT([$ANDROID_SUPPORT_LIB_NAME, $GOOGLE_PLAY_SERVICES_NAME])
-		else
-			AC_MSG_NOTICE([Google Play Services library not installed.])
-			ANDROID_SDK=no
-		fi
-	else
-		AC_MSG_NOTICE([Android Support Library not installed.])
-		ANDROID_SDK=no
-	fi
-fi
-
-ANDROID_RELEASE=no
-if test "x$ANDROID_SDK" != "xno"; then
-	HAVE_ANDROID_SDK="yes"
-	ANDROID_RELEASE=yes
-else
-	HAVE_ANDROID_SDK="no"
-fi
-
-AM_CONDITIONAL([ANDROID], [test x$ANDROID_SDK != xno])
-AM_CONDITIONAL([ANDROID_RELEASE], [test x$ANDROID_RELEASE = xyes])
-
-AC_SUBST(ANDROID_SDK)
-
-AC_ARG_WITH(fat-dir, AS_HELP_STRING([--with-fat-dir=PATH],
-	    [Set the directory to install the 'fat-install' distribution files to (defaults to no such target)]),
-	    [FATDIR=$withval], [FATDIR=none])
-
-AM_CONDITIONAL(FATINSTALL, [test "x$FATDIR" != "xnone"])
-
-AC_SUBST(FATDIR)
-
-AC_ARG_WITH(google-key, AS_HELP_STRING([--with-google-key=PATH],
-	    [Set the file to read the AltosDroid maps API key from (defaults to ~/altusmetrumllc/google-altosdroid-maps-api-key)]),
-	    [GOOGLEKEYFILE=$withval], [GOOGLEKEYFILE=$HOME/altusmetrumllc/google-altosdroid-maps-api-key])
-
-if test -r "$GOOGLEKEYFILE" -a -s "$GOOGLEKEYFILE"; then
-	GOOGLEKEY=`cat "$GOOGLEKEYFILE"`
-	HAVE_GOOGLE_KEY="yes"
-else
-	GOOGLEKEY='null'
-	HAVE_GOOGLE_KEY="no"
-fi
-
-AC_ARG_WITH(windows-key, AS_HELP_STRING([--with-windows-key=PATH],
-            [Set the file containing the Windows installer signing key (defaults to ~/altusmetrumllc/ssl.com/altus_metrum,_llc.p12)]),
-	    [WINDOWSKEYFILE="$withval"], [WINDOWSKEYFILE=$HOME/altusmetrumllc/ssl.com/altus_metrum,_llc.p12])
-
-AC_ARG_WITH(windows-key-pass, AS_HELP_STRING([--with-windows-key-pass=PATH],
-            [Set the file containing the Windows installer signing key password (defaults to ~/altusmetrumllc/ssl.com/password)]),
-	    [WINDOWSKEYPASSFILE="$withval"], [WINDOWSKEYPASSFILE=$HOME/altusmetrumllc/ssl.com/password])
-
-AC_CHECK_PROG(jsign, jsign, "yes", "no")
-
-if test -s "$WINDOWSKEYFILE" -a -s "$WINDOWSKEYPASSFILE" -a "$jsign" = yes; then
-	HAVE_WINDOWS_KEY="yes"
-else
-	HAVE_WINDOWS_KEY="no"
-fi
-
-WARN_CFLAGS="-Wall -Wpointer-arith -Wstrict-prototypes -Wmissing-prototypes -Wmissing-declarations -Wnested-externs"
-AC_SUBST(WARN_CFLAGS)
 
 AC_ARG_ENABLE(faketime, AS_HELP_STRING([--enable-faketime],
               [Use faketime program to ensure pdf files are reproducible (default=no)]),
 	      [FAKETIME=$enableval], [FAKETIME=no])
 
 AM_CONDITIONAL(FAKETIME, [test x$FAKETIME = xyes])
-
-AC_SUBST(GOOGLEKEY)
-AC_SUBST(WINDOWSKEYFILE)
-AC_SUBST(WINDOWSKEYPASSFILE)
-AC_SUBST(HAVE_WINDOWS_KEY)
 
 AC_PROG_CC
 AC_PROG_INSTALL
@@ -512,24 +323,7 @@ Makefile
 src/Makedefs
 src/chaoskey-v1.0/org.altusmetrum.ChaosKey.metainfo.xml
 doc/Makefile
-altoslib/Makefile
-altoslib/AltosVersion.java
-icon/Makefile
-altosuilib/Makefile
-altosui/Makefile
-altosui/Info.plist
-altosui/altos-windows.nsi
 libaltos/Makefile
-micropeak/Makefile
-micropeak/Info.plist
-micropeak/micropeak-windows.nsi
-telegps/Makefile
-telegps/Info.plist
-telegps/telegps-windows.nsi
-altosdroid/Makefile
-altosdroid/local.properties
-altosdroid/app/src/main/AndroidManifest.xml
-altosdroid/app/build.gradle
 ao-tools/Makefile
 ao-tools/lib/Makefile
 ao-tools/ao-rawload/Makefile
@@ -558,10 +352,6 @@ ao-tools/ao-test-gps/Makefile
 ao-tools/ao-usbtrng/Makefile
 ao-tools/ao-makebin/Makefile
 ao-utils/Makefile
-map-server/Makefile
-map-server/altos-mapd/Makefile
-map-server/altos-map/Makefile
-map-server/altos-mapj/Makefile
 ])
 
 echo ""
@@ -573,23 +363,7 @@ echo "    STM32L support..............: ${HAVE_ARM_M3_CC}"
 echo "    LPC11U14 support............: ${HAVE_ARM_M0_CC}"
 echo "    AVR compiler................: ${AVR_CC} ${AVR_OBJCOPY}"
 echo "    AVR support.................: ${HAVE_AVR_CC}"
-echo "    Android support.............: ${HAVE_ANDROID_SDK}"
-echo "    Android release support.....: ${ANDROID_RELEASE}"
 echo "    STlink support..............: ${HAVE_STLINK}"
 echo "    multi-arch libaltos.........: ${MULTI_ARCH}"
 echo "    install shared mime info....: ${INSTALL_SHARED_MIME_INFO}"
-echo "    Strip jar timestamps........: ${STRIP_NONDETERMINISM}"
-echo ""
-echo "  Java"
-echo "    freetts.....................: ${FREETTS}"
-echo "    jfreechart..................: ${JFREECHART}"
-echo "    jcommon.....................: ${JCOMMON}"
-echo "    JVM include.................: ${JVM_INCLUDE}"
-echo "    AltosDroid maps API key.....: ${HAVE_GOOGLE_KEY}"
-echo "    Windows installer key.......: ${HAVE_WINDOWS_KEY}"
-if test x${ANDROID_SDK} != "xno"; then
-echo ""
-echo "  Android path"
-echo "    Android SDK.................: ${ANDROID_SDK}"
-fi
 echo ""
