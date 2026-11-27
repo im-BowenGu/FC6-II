@@ -1,0 +1,12 @@
+[package]
+name = "rocket-vis"
+version = "0.1.0"
+edition = "2021"
+description = "Dependency-free monochrome X11 CFD and telemetry visualiser"
+
+[[bin]]
+name = "rocket-vis"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 2

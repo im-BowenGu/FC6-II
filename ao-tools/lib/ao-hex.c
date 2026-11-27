@@ -517,7 +517,6 @@ ao_hex_load(char *filename, struct ao_sym **symbols, int *num_symbolsp)
 static struct ao_hex_file *
 ao_hex_file_create(struct ao_hex_image *image, struct ao_sym *symbols, int num_symbols)
 {
-	/* split data into n-byte-sized chunks */
 	uint32_t		data_records = (image->length + BYTES_PER_RECORD-1) / BYTES_PER_RECORD;
 	/* extended address and data for each block, EOF, address and data for each symbol */
 	uint32_t		total_records = data_records * 2 + 1 + num_symbols * 2;

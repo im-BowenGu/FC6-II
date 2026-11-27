@@ -224,7 +224,6 @@ get_load(Elf *e)
 	 */
 	for (p = 0; p < nphdr; p++) {
 
-		/* Find this phdr */
 		gelf_getphdr(e, p, &phdr);
 
 		if (phdr.p_type != PT_LOAD)

@@ -1,0 +1,74 @@
+{
+  "rocket": "s-lx",
+  "solver": {
+    "nx": 224,
+    "ny": 64,
+    "nz": 64,
+    "u_lbm": 0.05,
+    "tau": 0.53,
+    "arch": "cuda",
+    "steps": 600
+  },
+  "geometry": {
+    "domain_x_m": 1.4,
+    "body_radius_m": 0.038,
+    "body_nose_m": 0.02,
+    "body_tail_m": 0.92,
+    "fin_hinge_m": 0.8,
+    "fin_chord_m": 0.075,
+    "fin_span_m": 0.1,
+    "fin_thick_m": 0.004,
+    "cg_m": 0.514
+  },
+  "flow": {
+    "si_u_mps": 26.0,
+    "si_rho_kgm3": 1.225
+  },
+  "calibration": {
+    "cd0": 1.01068,
+    "kd": 0.8438748125,
+    "linear": {
+      "Fy_N": [-0.0010485, 0.02869466, -0.00154138],
+      "Fz_N": [-0.02857666, 0.00164998, 0.00166992],
+      "Tx_Nm": [0.00007647, 0.00003353, -0.0037601],
+      "Ty_Nm": [0.00972336, 0.00005037, -0.00066089],
+      "Tz_Nm": [0.00047788, 0.00943619, -0.00041821]
+    }
+  },
+  "states": {
+    "neutral": {"fin0": 0, "fin1": 0, "fin2": 0, "fin3": 0, "fit": true, "cfd": true},
+    "pitch_p15": {"fin0": 15, "fin1": 0, "fin2": -15, "fin3": 0, "fit": true, "cfd": true},
+    "pitch_n15": {"fin0": -15, "fin1": 0, "fin2": 15, "fin3": 0, "fit": true, "cfd": true},
+    "yaw_p15": {"fin0": 0, "fin1": 15, "fin2": 0, "fin3": -15, "fit": true, "cfd": true},
+    "yaw_n15": {"fin0": 0, "fin1": -15, "fin2": 0, "fin3": 15, "fit": true, "cfd": true},
+    "roll_p15": {"fin0": 15, "fin1": 15, "fin2": 15, "fin3": 15, "fit": true, "cfd": true},
+    "roll_n15": {"fin0": -15, "fin1": -15, "fin2": -15, "fin3": -15, "fit": true, "cfd": true},
+    "xmix_p15": {"fin0": 15, "fin1": -15, "fin2": -15, "fin3": 15, "fit": true, "cfd": true},
+    "xmix_p4": {"fin0": 4, "fin1": -4, "fin2": -4, "fin3": 4, "fit": false, "cfd": true},
+    "xmix_p8": {"fin0": 8, "fin1": -8, "fin2": -8, "fin3": 8, "fit": false, "cfd": true},
+    "pitch_p5": {"fin0": 5, "fin1": 0, "fin2": -5, "fin3": 0, "fit": false, "cfd": false},
+    "pitch_p10": {"fin0": 10, "fin1": 0, "fin2": -10, "fin3": 0, "fit": false, "cfd": false},
+    "yaw_p5": {"fin0": 0, "fin1": 5, "fin2": 0, "fin3": -5, "fit": false, "cfd": false},
+    "yaw_p10": {"fin0": 0, "fin1": 10, "fin2": 0, "fin3": -10, "fit": false, "cfd": false}
+  },
+  "paths": {
+    "sim": "sim/run_dynamic_sim.py",
+    "out": "build/cfd",
+    "stl": "cad/fin_plate.stl",
+    "fields": "build/cfd/fields"
+  },
+  "telemetry": {
+    "csv": "hil/logs/bridge.csv"
+  },
+  "hinge_axis": "x=0, span along +y",
+  "units": "degrees",
+  "simulation": {
+    "domain": "axis-aligned box around the rocket",
+    "precision": "Taichi D3Q19/SRT LBM (CUDA, FP32 arithmetic)",
+    "reference_speed_mps": 26.0,
+    "outputs": ["force_N", "torque_Nm", "cd"],
+    "firmware_loop_hz": 100,
+    "motor_burn_s": 2.0,
+    "integration": "same 100 Hz plant used by sim/run_dynamic_sim.py"
+  }
+}

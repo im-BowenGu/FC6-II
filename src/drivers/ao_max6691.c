@@ -124,7 +124,6 @@ ao_max6691_sample(void)
 	/* Switch back to GPIO mode */
 	stm_moder_set(AO_MAX6691_GPIO, AO_MAX6691_PIN, STM_MODER_INPUT);
 
-	/* Mark DMA done */
 	ao_dma_done_transfer(AO_MAX6691_DMA);
 
 	for (i = 0; i < AO_MAX6691_CHANNELS; i++) {

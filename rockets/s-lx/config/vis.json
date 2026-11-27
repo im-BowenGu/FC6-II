@@ -1,0 +1,64 @@
+{
+  "rocket_name": "S-LX",
+  "title": "S-LX CFD / HIL - Xwayland",
+  "width": 1240,
+  "height": 760,
+  "paths": {
+    "log": "hil/logs/bridge.csv",
+    "stl": "cfd/fluidx3d/S-LX_cfd.stl",
+    "fields": "build/cfd/fields",
+    "motion": "build/cfd/motion.json",
+    "socket": "build/cfd/field.sock"
+  },
+  "gpio_names": [
+    "pwm_en", "pwm0", "pwm1", "pwm2", "pwm3", "i2c_busy", "spi_busy",
+    "sd_cs_n", "usart_tx", "usart_rx", "status_led", "arm_gpio",
+    "arm_led", "fault_led"
+  ],
+  "fin_states": [
+    { "name": "neutral",   "angles": [0.0, 0.0, 0.0, 0.0] },
+    { "name": "pitch_p15", "angles": [15.0, 0.0, -15.0, 0.0] },
+    { "name": "pitch_n15", "angles": [-15.0, 0.0, 15.0, 0.0] },
+    { "name": "yaw_p15",   "angles": [0.0, 15.0, 0.0, -15.0] },
+    { "name": "yaw_n15",   "angles": [0.0, -15.0, 0.0, 15.0] },
+    { "name": "roll_p15",  "angles": [15.0, 15.0, 15.0, 15.0] },
+    { "name": "roll_n15",  "angles": [-15.0, -15.0, -15.0, -15.0] },
+    { "name": "xmix_p15",  "angles": [15.0, -15.0, -15.0, 15.0] }
+  ],
+  "geometry": {
+    "cg_x": 0.514,
+    "hinge_x": 0.80,
+    "hinge_r": 0.038,
+    "x_min": -0.05,
+    "x_max": 1.35,
+    "y_min": -0.22,
+    "y_max": 0.22,
+    "grid_m": 0.1
+  },
+  "labels": {
+    "source": "SOURCE",
+    "live": "LIVE",
+    "replay": "REPLAY",
+    "stale": "STALE",
+    "cfd": "CFD",
+    "telemetry": "TELEMETRY",
+    "feed": "FEED",
+    "time": "TIME",
+    "alt": "ALT",
+    "vv": "VV",
+    "pred_apo": "PRED APO",
+    "pitch": "PITCH",
+    "roll": "ROLL",
+    "fault": "FAULT",
+    "fin_act": "FIN ACT",
+    "pwm": "PWM",
+    "gpio": "GPIO",
+    "seq": "SEQ",
+    "hz": "HZ",
+    "field": "FIELD",
+    "forces": "FORCES",
+    "state": "STATE",
+    "empty_cfd": "NO FIELD",
+    "quit": "KEY=QUIT"
+  }
+}

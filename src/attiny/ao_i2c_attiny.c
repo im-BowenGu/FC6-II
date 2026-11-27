@@ -95,7 +95,6 @@ ao_i2c_write_byte(uint8_t byte)
 	/* Pull SCL low */
 	I2C_PORT &= ~(1<<I2C_PIN_SCL);
 
-	/* Write the byte */
 	USIDR = byte;
       
 	/* Clock and verify (N)ACK from slave */
@@ -116,7 +115,6 @@ ao_i2c_read_byte(uint8_t ack)
 	/* Read the data */
 	ret = ao_i2c_get_byte(I2C_USISR_8BIT);
 
-	/* Ack it */
 	USIDR = ack;
 	ao_i2c_transfer(I2C_USISR_8BIT);
 

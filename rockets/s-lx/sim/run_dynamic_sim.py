@@ -147,9 +147,7 @@ def scheduled_tilt(t: float) -> float:
     return 0.0
 
 
-# ---------------------------------------------------------------------------
 # Input data
-# ---------------------------------------------------------------------------
 class Series:
     """Small interpolatable float series."""
 
@@ -314,9 +312,7 @@ def lsq(A: list[list[float]], y: list[float]) -> list[float]:
     return x
 
 
-# ---------------------------------------------------------------------------
 # Controller ported from the firmware
-# ---------------------------------------------------------------------------
 class Guidance:
     def __init__(self, dynamic: bool, noise: float, seed: int):
         self.dynamic = dynamic
@@ -449,9 +445,7 @@ class Guidance:
         return list(self.fin_deg)
 
 
-# ---------------------------------------------------------------------------
 # Coupled plant
-# ---------------------------------------------------------------------------
 def simulate(mode: str, or_data: dict[str, Series], aero: dict,
              noise: float = 0.0, seed: int = 7,
              initial_tilt_deg: float = 0.0,
@@ -765,9 +759,7 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
     return rows, summary
 
 
-# ---------------------------------------------------------------------------
 # Plots / movie (SVG -> PNG -> MP4, no Python imaging libraries)
-# ---------------------------------------------------------------------------
 def esc(s: str) -> str:
     return s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
@@ -951,9 +943,7 @@ def make_movie(guided: list[dict], outdir: Path, fps: int = 10) -> None:
     return out
 
 
-# ---------------------------------------------------------------------------
 # Local CI verification
-# ---------------------------------------------------------------------------
 def check_summaries(summaries: dict[str, dict], aero: dict) -> None:
     """Fail the local CI run when the profile no longer meets its flight target.
 
@@ -1004,9 +994,7 @@ def check_summaries(summaries: dict[str, dict], aero: dict) -> None:
           "5 deg offset recovery, wind and noise scenarios")
 
 
-# ---------------------------------------------------------------------------
 # Simulation logging
-# ---------------------------------------------------------------------------
 def _event(t: float, kind: str, detail: str, row: dict) -> dict:
     """One compact, machine-readable log event."""
     return {
@@ -1101,9 +1089,7 @@ def write_logs(runs: dict[str, list[dict]], summaries: dict[str, dict],
     return outdir
 
 
-# ---------------------------------------------------------------------------
 # Main
-# ---------------------------------------------------------------------------
 def cli_option(name: str) -> str | None:
     if name in sys.argv:
         i = sys.argv.index(name)

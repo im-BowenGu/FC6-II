@@ -294,11 +294,9 @@ void xrijndaelEncrypt(word32 block[], roundkey *rkk)
   int ROUNDS = rkk->ROUNDS;
   word32 *rp = rkk->rk;
 
-  /* begin with a key addition */
   xKeyAddition(block, block, rp, BC);
   rp += BC;
 
-  /* ROUNDS-1 ordinary rounds */
   for (r = 1; r < ROUNDS; r++) {
     xShiftSubst(block2, block, shift, BC, xS);
     xMixAdd(block, block2, rp, BC);

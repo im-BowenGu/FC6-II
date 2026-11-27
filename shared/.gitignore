@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+target/
+!/cfd/config.py
+!/vis/rust/src/config.rs

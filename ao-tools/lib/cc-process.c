@@ -137,7 +137,6 @@ cc_flight_cook(struct cc_flightraw *raw)
 	cooked->pres_accel = *pres_accel;
 	free(pres_accel);
 
-	/* copy state */
 	cooked->state.num = raw->state.num;
 	cooked->state.size = raw->state.num;
 	cooked->state.data = calloc(cooked->state.num, sizeof (struct cc_timedataelt));

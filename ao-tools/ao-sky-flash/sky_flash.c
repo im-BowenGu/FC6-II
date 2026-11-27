@@ -179,7 +179,6 @@ main(int argc, char **argv)
 		exit(1);
 
 	if (raw) {
-		/* Set the baud rate to 115200 */
 		skytraq_setcomm(fd, 115200);
 		sleep(1);
 		skytraq_setspeed(fd, 115200);

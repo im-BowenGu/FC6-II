@@ -406,7 +406,6 @@ ao_btm(void)
 				    NULL);
 	ao_btm_echo(0);
 
-	/* Check current pin state */
 	ao_btm_check_link();
 
 	for (;;) {

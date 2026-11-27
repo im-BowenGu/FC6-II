@@ -15,9 +15,12 @@ stack in the main rocket project is untouched.
 | `include/slx_stm32_pinmap.h` | STM32F103C8T6 Blue Pill pin map |
 | `tests/test_slx_profile.c` | host tests for constants, interpolation, mixer, state machine, accel gate, coast weathervane, failsafe |
 | `model.yaml` | rough model manifest: dimensions, motor, target, aero inputs, CAD references |
-| `cad/`, `cfd/` | OpenRocket models, fin STL, movable-fin state table and Taichi/CUDA sweep driver |
+| `config/` | per-rocket CFD, physics and visualiser configuration consumed by `shared/` |
+| `cad/`, `cfd/` | OpenRocket models, fin STL, state table and compatibility CFD driver |
 | `sim/` | self-contained 100 Hz firmware-in-the-loop trajectory surrogate |
-| `vis-rust/` | dependency-free Rust Xwayland window: real HIL GPIO, Taichi CFD streamlines and rocket STL |
+| `../../shared/cfd/` | cross-rocket Taichi solver, force recorder and live field-stream server |
+| `../../shared/physics/` | cross-rocket MuJoCo attitude engine |
+| `../../shared/vis/rust/` | dependency-free Rust Xwayland window: live CFD, telemetry feed and rocket STL |
 | `Makefile` | `make ci` = offline host tests + local CI checks; `make ci-live` = live fin-state CFD + recorded-motion replay |
 | `ci/run-local.sh` | standalone local CI entry point; no GitHub Actions, no PR gate |
 
@@ -73,6 +76,24 @@ rockets/s-lx/ci/run-local.sh  # standalone local CI entry point
 make -C src/s-lx-bluepill-f103 ROCKET=s-lx   # ARM flight target
 ```
 
+The GNU Make pipeline uses only tools available on a standard FHS Linux system
+(`cc`, `python3`, `cargo`, `verilator`). Set `TAICHI_PYTHON` if Taichi and numpy
+live in another interpreter, and `TAICHI_LD_LIBRARY_PATH` if the native Taichi
+extension needs extra library directories. A parallel Nix pipeline is available
+from the repository root:
+
+```sh
+nix develop            # FHS-equivalent toolchain without changing the Makefile
+nix run .#slx-ci       # host tests + frozen-lookup sim
+nix run .#slx-ci-live  # live Taichi/CUDA sweep + replay
+nix run .#slx-vis      # build the shared Rust visualiser
+```
+
+`ci-live` still needs a Taichi/CUDA Python: set `TAICHI_PYTHON` and
+`TAICHI_LD_LIBRARY_PATH` before either CI entry point. The Nix scripts copy the
+profile and `shared/` into a writable temporary tree, so no build output is
+written into the Nix store.
+
 Every simulation run writes `sim/logs/<mode>.csv` (100 Hz telemetry),
 `sim/logs/<mode>.events.jsonl` (state transitions and flight milestones) and
 `sim/logs/summaries.json` / `run.json`, including when `--check` fails. Use
@@ -88,17 +109,14 @@ writes raw lattice forces and calibrated physical force/torque rows to
 `build/cfd/logs/`, fits
 them into `build/cfd/motion.json`, then runs the real 100 Hz firmware loop
 against **that recorded lookup**. The flight loop never calls the flow solver.
-It requires a CUDA-capable GPU and Taichi 1.7+ in a Python 3.11 venv; override
-`TAICHI_PYTHON` and `TAICHI_LD_LIBRARY_PATH` if they are not at the sandbox
-defaults. The committed `sim/data/` CSVs remain the offline fallback for
+It requires a CUDA-capable GPU and Taichi 1.7+ in a Python 3.11 interpreter;
+override `TAICHI_PYTHON` and `TAICHI_LD_LIBRARY_PATH` if needed. The committed
+`sim/data/` CSVs remain the offline fallback for
 `make test`; the old FluidX3D/OpenFOAM inputs are retained as provenance only.
 
-There is no GitHub Actions workflow and no PR gate. The former workflow
-(`ci/rocket-profile.yml`), which also asserted that upstream files were not
-deleted and that the top-level `README.md` matched upstream, has been removed.
-`ci/run-local.sh` is the sole CI entry point: it runs offline by default and
-adds the live-CFD leg only when `RUN_LIVE_CFD=1` on a machine with Taichi and a
-CUDA GPU. No check compares this repository's README to any upstream ref.
+There is no GitHub Actions workflow and no PR gate. `ci/run-local.sh` runs
+offline by default and adds the live-CFD leg only when `RUN_LIVE_CFD=1` on a
+machine with Taichi and a CUDA GPU.
 
 The simulator check prints all eight modes and asserts:
 
@@ -137,36 +155,39 @@ run is in progress; the GUI never attaches to shared memory itself.
 
 ### Native CFD/HIL window (Rust, no crates)
 
-`vis-rust/` is a dependency-free Rust X11 client. It opens a **real Xwayland
-window** (raw X11 wire protocol over `/tmp/.X11-unix/X0`, CPU framebuffer
-uploaded with `PutImage`) and composites three live data sources:
+`../../shared/vis/rust/` is a dependency-free Rust X11 client shared by every
+rocket. It opens a **real Xwayland window** (raw X11 wire protocol over
+`/tmp/.X11-unix/X0`, CPU framebuffer uploaded with `PutImage`). Labels, paths,
+GPIO names and fin states come from `config/vis.json`; no airframe data is
+compiled into the shared code. The layout is deliberately monochrome and
+data-dense:
 
-* **GPIO / flight state** — tailed directly from `hil/logs/bridge.csv`. Column
-  names are matched exactly; the status LEDs show real pin bits from the
-  Verilated peripheral (including the RTL's free-running status-LED divider).
-  Without `--replay` the viewer starts at the current end of the log and
-  follows a fresh HIL run in real time; `--replay` reads the whole log.
-* **CFD streamlines** — RK2-traced through Taichi/CUDA macroscopic velocity
-  slices in `build/cfd/fields/`, selecting the slice nearest the current
-  *actual* fin angles. These are steady-state slices, not a 100 Hz solve.
-* **Rocket geometry** — the binary STL at `cfd/fluidx3d/S-LX_cfd.stl`, with fins
-  deflected approximately about their radial hinges using those same angles.
+* **Live CFD** — a separate Taichi/CUDA process (`cfd-live`) streams macroscopic
+  velocity slices at 5–10 Hz over a Unix socket. The visualiser draws RK2
+  streamlines through the newest frame and displays its sequence number and
+  rate. If the stream is unavailable it falls back to the recorded slices in
+  `build/cfd/fields/`.
+* **Live telemetry feed** — `hil/logs/bridge.csv` is tailed for time, state,
+  altitude, vertical velocity, predicted apogee, attitude, fin commands, PWM
+  widths and the real peripheral GPIO bits.
+* **Rocket geometry** — the binary STL named in `config/vis.json`, with fins
+  deflected about their radial hinges using the actual fin angles.
 
 ```sh
-make -C rockets/s-lx cfd-fields          # regenerate 8 real Taichi velocity slices + motion.json
-make -C rockets/s-lx vis-rust            # offline cargo build via nix-shell
+make -C rockets/s-lx cfd-fields          # regenerate recorded slices + motion.json
+make -C rockets/s-lx cfd-live            # start the live Taichi field stream
+make -C rockets/s-lx vis-rust            # cargo build of the shared visualiser
 make -C rockets/s-lx vis-rust-run VIS_ARGS=--replay
 make -C rockets/s-lx vis-rust-run VIS_ARGS='--hold --print-rows'
 ```
 
-Useful binary flags: `--log PATH`, `--stl PATH`, `--fields DIR`, `--motion PATH`,
-`--fps N`, `--replay`, `--hold`, `--print-rows`, and
-`--snapshot PPM [--snapshot-after SECS]`. The PPM is the **exact framebuffer
-uploaded to X**, so it can be inspected without an X screenshot tool.
-`--hold` ignores key presses (handy while a long HIL run is producing rows);
-otherwise any key in the window quits. `SLX_X_DEBUG=1` prints X11 request and
-error diagnostics. The visualiser is a viewer only: it never writes telemetry
-or shared memory.
+Useful binary flags: `--config PATH`, `--log PATH`, `--stl PATH`, `--fields DIR`,
+`--motion PATH`, `--socket PATH`, `--fps N`, `--replay`, `--hold`,
+`--print-rows`, and `--snapshot PPM [--snapshot-after SECS]`. The PPM is the
+**exact framebuffer uploaded to X**. `--hold` ignores key presses; otherwise
+any key in the window quits. `SLX_X_DEBUG=1` prints X11 request and error
+diagnostics. The visualiser is a viewer only: it never writes telemetry or
+shared memory.
 
 Servo switching is **not** instantaneous in either simulator: each guidance
 command waits 10 ms (one 100 Hz tick) before reaching the PCA9685 input, is

@@ -32,6 +32,13 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 HIL = HERE.parent
 SIM = HIL.parent / "sim"
+ROCKET = SIM.parent
+PHYSICS_CONFIG = ROCKET / "config" / "physics.json"
+SHARED = Path(__file__).resolve().parents[4] / "shared"
+if str(SHARED) not in sys.path:
+    sys.path.insert(0, str(SHARED))
+
+from physics.mujoco_engine import AttitudeConfig, MujocoAttitudeEngine  # noqa: E402
 
 spec = importlib.util.spec_from_file_location("slxsim", SIM / "run_dynamic_sim.py")
 slxsim = importlib.util.module_from_spec(spec)
@@ -52,34 +59,10 @@ SERVO_LATENCY_TICKS = slxsim.SERVO_LATENCY_TICKS
 AERO_RESPONSE_TAU_S = slxsim.AERO_RESPONSE_TAU_S
 
 
-class MujocoAttitude:
-    """MuJoCo rigid-body attitude integration driven by CFD moments."""
-
-    XML = """<mujoco model="s-lx">
-      <option gravity="0 0 0" timestep="0.01"/>
-      <worldbody>
-        <body name="rocket" pos="0 0 0">
-          <joint name="pitch" type="hinge" axis="1 0 0"/>
-          <joint name="roll" type="hinge" axis="0 1 0"/>
-          <joint name="yaw" type="hinge" axis="0 0 1"/>
-          <geom name="body" type="capsule" fromto="0 0 -0.3 0 0 0.3"
-                size="0.033" density="227"/>
-        </body>
-      </worldbody>
-    </mujoco>"""
-
-    def __init__(self) -> None:
-        import mujoco  # imported lazily so the cfd backend stays dependency-free
-        self.mj = mujoco
-        self.model = mujoco.MjModel.from_xml_string(self.XML)
-        self.data = mujoco.MjData(self.model)
-
-    def step(self, moments: tuple[float, float, float]) -> tuple[float, float, float, float, float, float]:
-        for i, value in enumerate(moments):
-            self.data.qfrc_applied[i] = value
-        self.mj.mj_step(self.model, self.data)
-        return (self.data.qpos[0], self.data.qpos[1], self.data.qpos[2],
-                self.data.qvel[0], self.data.qvel[1], self.data.qvel[2])
+def _attitude_config() -> AttitudeConfig:
+    if PHYSICS_CONFIG.exists():
+        return AttitudeConfig(**json.loads(PHYSICS_CONFIG.read_text()))
+    return AttitudeConfig(model_name=ROCKET.name)
 
 
 def plant_step(state: dict, cmd: list[float], or_data: dict, aero: dict,
@@ -265,7 +248,8 @@ def main() -> int:
     sensors = Segment("slx_hil_sensors", SENSOR_FMT)
     fins = Segment("slx_hil_fins", FINS_FMT)
 
-    backend = MujocoAttitude() if args.backend == "mujoco" else None
+    backend = MujocoAttitudeEngine.from_config(_attitude_config()) \
+        if args.backend == "mujoco" else None
     state = {
         "t": 0.0, "z": 0.0, "x": 0.0, "y": 0.0,
         "vx": 0.0, "vy": 0.0, "vz": 0.0,

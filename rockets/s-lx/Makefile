@@ -1,21 +1,12 @@
-# S-LX profile (UKROC 2027 competition): host tests and local CI.
-#
-# `make ci` is the local CI entry point. It never touches the upstream tree
-# and does not require GitHub Actions.
-
 CC ?= cc
 CFLAGS ?= -std=c99 -Wall -Wextra -Werror -O2
 CPPFLAGS += -Iinclude
 LDLIBS += -lm
 PYTHON ?= python3
-
-# Taichi wheels are built for Python 3.11, not every host default. Override
-# both variables when the venv lives elsewhere; the defaults match the local
-# CI sandbox (CUDA driver + zlib + libstdc++ + libX11 are needed by Taichi's
-# native extension).
-TAICHI_PYTHON ?= /tmp/opencode/taichi-venv/bin/python
-TAICHI_LD_LIBRARY_PATH ?= /nix/store/hi6r6y54znvyhmj554k0j59i281ahlrj-nvidia-x11-580.196.07/lib:/nix/store/kp68n1q6r8lzpf5mxjmfasn3zq2pql4x-zlib-1.3.2/lib:/nix/store/myhwfdgqm39yms5clinafii9i1nmq43h-gcc-16.2.0-lib/lib:/nix/store/nz6yl26svfj0qap9qnpvd26yp2gxn3xl-libx11-1.8.14/lib
-TAICHI_RUN = env LD_LIBRARY_PATH="$(TAICHI_LD_LIBRARY_PATH)" "$(TAICHI_PYTHON)"
+TAICHI_PYTHON ?= $(PYTHON)
+TAICHI_LD_LIBRARY_PATH ?=
+TAICHI_RUN = env PYTHONPATH="$(abspath ../..):$$PYTHONPATH" LD_LIBRARY_PATH="$(TAICHI_LD_LIBRARY_PATH)" "$(TAICHI_PYTHON)"
+CARGO ?= cargo
 
 BUILD := build
 TARGETS := $(BUILD)/test_slx_profile $(BUILD)/test_slx_aero
@@ -23,19 +14,17 @@ OBJS := $(BUILD)/slx_profile.o $(BUILD)/slx_aero.o \
         $(BUILD)/test_slx_profile.o $(BUILD)/test_slx_aero.o
 SIM := sim/run_dynamic_sim.py
 LIVE_CFD := cfd/run_live_cfd.py
+CFD_CONFIG := config/cfd.json
+VIS_CONFIG := config/vis.json
+VIS_DIR := ../../shared/vis/rust
 MOTION := $(BUILD)/cfd/motion.json
-# Override from the runner or the command line, e.g.
-#   make cfd-record CFD_ARGS="--configs neutral,pitch_p15 --steps 2000"
 CFD_ARGS ?=
-
-# Dependency-free Rust X11 visualiser (real Xwayland window). Rust is not on
-# PATH by default here, so build it inside the same nix-shell used elsewhere.
-VIS_DIR := vis-rust
-VIS_BIN := $(VIS_DIR)/target/release/slx-cfd-vis
-RUST_NIX ?= nix-shell -p rustc cargo --run
+CFD_LIVE_ARGS ?=
 VIS_ARGS ?=
 
-.PHONY: all test ci ci-live host-test model-check sim-check verify cfd-record cfd-test cfd-fields vis-rust vis-rust-run clean
+VIS_BIN := $(VIS_DIR)/target/release/rocket-vis
+
+.PHONY: all test ci ci-live host-test model-check sim-check verify cfd-record cfd-test cfd-fields cfd-live vis-rust vis-rust-run clean
 
 all: test
 
@@ -55,34 +44,29 @@ sim-check:
 
 verify: test
 
-# Optional live-CFD leg of local CI. Requires a CUDA-capable GPU and Taichi;
-# never invoked by GitHub Actions.
 ci-live: cfd-test
 
-# Run the Taichi D3Q19 LBM over the selected fin states on CUDA and record
-# their calibrated forces as one motion lookup. No flow solver runs inside the
-# 100 Hz flight loop.
 cfd-record:
-	@test -x "$(TAICHI_PYTHON)" || { echo "Taichi Python not found: $(TAICHI_PYTHON) (override TAICHI_PYTHON=)"; exit 1; }
-	$(TAICHI_RUN) $(LIVE_CFD) --out $(BUILD)/cfd $(CFD_ARGS)
+	@$(TAICHI_RUN) -c 'import taichi, numpy' 2>/dev/null || { echo "Taichi/numpy unavailable in $(TAICHI_PYTHON); override TAICHI_PYTHON=PATH"; exit 1; }
+	$(TAICHI_RUN) $(LIVE_CFD) --config $(CFD_CONFIG) --out $(BUILD)/cfd $(CFD_ARGS)
 
-# Optional local CI gate on a machine with CUDA: solve the fin states, then
-# replay the recorded lookup through the real trajectory/firmware simulation.
 cfd-test: host-test model-check cfd-record
 	$(PYTHON) $(SIM) --check --motion $(MOTION)
 
-# Same GPU sweep plus macroscopic velocity slices consumed by the Rust
-# visualiser. Regenerates motion.json as well, so the HIL replay stays in sync.
 cfd-fields:
-	@test -x "$(TAICHI_PYTHON)" || { echo "Taichi Python not found: $(TAICHI_PYTHON) (override TAICHI_PYTHON=)"; exit 1; }
-	$(TAICHI_RUN) $(LIVE_CFD) --out $(BUILD)/cfd --dump-field $(CFD_ARGS)
+	@$(TAICHI_RUN) -c 'import taichi, numpy' 2>/dev/null || { echo "Taichi/numpy unavailable in $(TAICHI_PYTHON); override TAICHI_PYTHON=PATH"; exit 1; }
+	$(TAICHI_RUN) $(LIVE_CFD) --config $(CFD_CONFIG) --out $(BUILD)/cfd --dump-field $(CFD_ARGS)
 
-# Native window on Xwayland: live HIL GPIO + Taichi CFD streamlines + rocket STL.
+cfd-live:
+	@$(TAICHI_RUN) -c 'import taichi, numpy' 2>/dev/null || { echo "Taichi/numpy unavailable in $(TAICHI_PYTHON); override TAICHI_PYTHON=PATH"; exit 1; }
+	$(TAICHI_RUN) -m shared.cfd.live_server --config $(CFD_CONFIG) --socket $(BUILD)/cfd/field.sock --log hil/logs/bridge.csv $(CFD_LIVE_ARGS)
+
 vis-rust:
-	$(RUST_NIX) 'cargo build --release --offline --manifest-path $(VIS_DIR)/Cargo.toml'
+	@command -v $(CARGO) >/dev/null || { echo "cargo not found; install the Rust toolchain"; exit 1; }
+	$(CARGO) build --release --offline --manifest-path $(VIS_DIR)/Cargo.toml
 
 vis-rust-run: vis-rust
-	DISPLAY=$${DISPLAY:-:0} $(VIS_BIN) $(VIS_ARGS)
+	DISPLAY=$${DISPLAY:-:0} $(VIS_BIN) --config $(VIS_CONFIG) $(VIS_ARGS)
 
 $(BUILD):
 	mkdir -p $(BUILD)

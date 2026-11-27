@@ -1,10 +1,9 @@
 //! Minimal X11 client: raw wire protocol over a Unix socket, no crates.
 //!
-//! Only the handful of requests this visualiser needs are implemented:
-//! setup, CreateWindow, MapWindow, CreateGC, ChangeProperty, PutImage and
-//! event draining. The frame is rasterised on the CPU and uploaded with
-//! ZPixmap PutImage calls, split to respect the server's request limit.
+//! Frames are rasterised on the CPU and uploaded as ZPixmap PutImage chunks.
+//! ConfigureNotify updates the framebuffer when the WM resizes the window.
 
+use std::collections::VecDeque;
 use std::env;
 use std::fs;
 use std::io::{self, Read, Write};
@@ -31,10 +30,14 @@ fn pad4(b: &mut Vec<u8>) {
         b.push(0);
     }
 }
-/// X11 request `length` is 32-bit words INCLUDING the 4-byte request header.
-/// Every request builder below must use this helper, not words-after-header.
 fn words(body_bytes: usize) -> u16 {
     ((4 + body_bytes) / 4) as u16
+}
+fn u16at(b: &[u8], off: usize) -> u16 {
+    u16::from_le_bytes([b[off], b[off + 1]])
+}
+fn u32at(b: &[u8], off: usize) -> u32 {
+    u32::from_le_bytes([b[off], b[off + 1], b[off + 2], b[off + 3]])
 }
 
 fn hex(b: &[u8]) -> String {
@@ -46,10 +49,13 @@ fn hex(b: &[u8]) -> String {
 }
 
 #[derive(Debug)]
-#[allow(dead_code)] // masks are parsed for ABI validation; PutImage uses 0x00RRGGBB
+#[allow(dead_code)]
 pub struct X11 {
     stream: UnixStream,
     pending: Vec<u8>,
+    events: Vec<Vec<u8>>,
+    replies: VecDeque<Vec<u8>>,
+    errors: Vec<Vec<u8>>,
     max_request: usize,
     base: u32,
     id_mask: u32,
@@ -63,6 +69,12 @@ pub struct X11 {
     pub green_mask: u32,
     pub blue_mask: u32,
     pub image_lsb: bool,
+}
+
+#[derive(Default, Debug)]
+pub struct Events {
+    pub key: bool,
+    pub resized: Option<(u16, u16)>,
 }
 
 fn auth_cookie(display_num: u32) -> Option<(String, Vec<u8>)> {
@@ -107,8 +119,8 @@ impl X11 {
         stream.set_write_timeout(Some(Duration::from_secs(10))).ok();
 
         let mut req = vec![0u8; 12];
-        req[0] = b'l'; // little-endian wire format
-        req[2] = 11; // protocol major
+        req[0] = b'l';
+        req[2] = 11;
         let (name, cookie) = auth_cookie(num).unwrap_or_default();
         req[6..8].copy_from_slice(&(name.len() as u16).to_le_bytes());
         req[8..10].copy_from_slice(&(cookie.len() as u16).to_le_bytes());
@@ -125,20 +137,15 @@ impl X11 {
             stream.read_exact(&mut reason).ok();
             return Err(format!(
                 "X setup rejected (status {}, protocol {}.{}): {}",
-                head[0], head[2], head[3],
+                head[0],
+                head[2],
+                head[3],
                 String::from_utf8_lossy(&reason[..reason.len().min(120)])
             ));
         }
         let nwords = u16::from_le_bytes([head[6], head[7]]) as usize;
         let mut body = vec![0u8; nwords * 4];
         stream.read_exact(&mut body).map_err(|e| format!("X setup body: {e}"))?;
-
-        let u32at = |b: &[u8], o: usize| -> u32 {
-            u32::from_le_bytes([b[o], b[o + 1], b[o + 2], b[o + 3]])
-        };
-        let u16at = |b: &[u8], o: usize| -> u16 {
-            u16::from_le_bytes([b[o], b[o + 1]])
-        };
 
         let base = u32at(&body, 4);
         let id_mask = u32at(&body, 8);
@@ -191,8 +198,6 @@ impl X11 {
             }
         }
 
-        // Resolve the root visual's RGB masks. Xwayland advertises a TrueColor
-        // 24-bit visual whose pixel value is 0x00RRGGBB.
         let mut visual = root_visual;
         let mut rm = 0x00ff_0000u32;
         let mut gm = 0x0000_ff00u32;
@@ -242,6 +247,9 @@ impl X11 {
         Ok(Self {
             stream,
             pending: Vec::new(),
+            events: Vec::new(),
+            replies: VecDeque::new(),
+            errors: Vec::new(),
             max_request: maxreq,
             base,
             id_mask,
@@ -261,28 +269,99 @@ impl X11 {
     pub fn new_id(&mut self) -> u32 {
         let id = self.base | (self.next_id & self.id_mask);
         self.next_id = self.next_id.wrapping_add(0x1000);
-        if id == 0 {
-            self.base | 1
-        } else {
-            id
-        }
+        if id == 0 { self.base | 1 } else { id }
     }
 
     fn send(&mut self, b: &[u8]) -> Result<(), String> {
-        // PutImage is sent 15x per frame; logging it would drown out setup
-        // diagnostics, so only trace the small control requests.
-        if env::var_os("SLX_X_DEBUG").is_some() && b.first().copied() != Some(72) {
+        if env::var_os("VIS_X_DEBUG").is_some() && b.first().copied() != Some(72) {
             let pre = if b.len() >= 4 { hex(&b[..4]) } else { hex(b) };
-            eprintln!("XREQ opcode={} bytes={} head={}", b.first().copied().unwrap_or(255), b.len(), pre);
+            eprintln!(
+                "XREQ opcode={} bytes={} head={}",
+                b.first().copied().unwrap_or(255),
+                b.len(),
+                pre
+            );
         }
         self.stream.write_all(b).map_err(|e| format!("X write: {e}"))
     }
 
+    fn fetch(&mut self, block: bool) -> Result<(), String> {
+        let mut buf = [0u8; 8192];
+        if block {
+            self.stream.set_nonblocking(false).ok();
+            match self.stream.read(&mut buf) {
+                Ok(0) => return Err("X connection closed".into()),
+                Ok(n) => self.pending.extend_from_slice(&buf[..n]),
+                Err(e) => return Err(format!("X read: {e}")),
+            }
+        } else {
+            self.stream.set_nonblocking(true).ok();
+            loop {
+                match self.stream.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => self.pending.extend_from_slice(&buf[..n]),
+                    Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
+                    Err(_) => break,
+                }
+            }
+            self.stream.set_nonblocking(false).ok();
+        }
+        Ok(())
+    }
+
+    fn take_packet(&mut self) -> Option<Vec<u8>> {
+        if self.pending.len() < 32 {
+            return None;
+        }
+        let total = if self.pending[0] == 1 {
+            if self.pending.len() < 8 {
+                return None;
+            }
+            32 + u32at(&self.pending, 4) as usize * 4
+        } else {
+            32
+        };
+        if self.pending.len() < total {
+            return None;
+        }
+        Some(self.pending.drain(..total).collect())
+    }
+
+    fn pump(&mut self, block: bool) -> Result<(), String> {
+        self.fetch(block)?;
+        while let Some(packet) = self.take_packet() {
+            match packet[0] {
+                0 => self.errors.push(packet),
+                1 => self.replies.push_back(packet),
+                _ => self.events.push(packet),
+            }
+        }
+        Ok(())
+    }
+
+    fn read_reply(&mut self, label: &str) -> Result<Vec<u8>, String> {
+        loop {
+            if let Some(err) = self.errors.pop() {
+                return Ok(err);
+            }
+            if let Some(reply) = self.replies.pop_front() {
+                return Ok(reply);
+            }
+            self.pump(true).map_err(|e| format!("{label}: {e}"))?;
+        }
+    }
+
+    fn resource_request(&mut self, opcode: u8, id: u32) -> Result<(), String> {
+        let mut b = Vec::with_capacity(8);
+        w8(&mut b, opcode);
+        w8(&mut b, 0);
+        w16(&mut b, words(4));
+        w32(&mut b, id);
+        self.send(&b)
+    }
+
     pub fn create_window(&mut self, w: u16, h: u16) -> Result<u32, String> {
         let id = self.new_id();
-        // xCreateWindowReq is 32 bytes: 4-byte header + 28-byte body.
-        // The two extra background/pixel words a naive port might add would
-        // make the server reject the request with BadLength (16).
         let mut body = Vec::with_capacity(28);
         w32(&mut body, id);
         w32(&mut body, self.root);
@@ -290,32 +369,36 @@ impl X11 {
         wi16(&mut body, 60);
         w16(&mut body, w);
         w16(&mut body, h);
-        w16(&mut body, 0); // border width
-        w16(&mut body, 1); // InputOutput
+        w16(&mut body, 0);
+        w16(&mut body, 1);
         w32(&mut body, self.visual);
-        w32(&mut body, 0); // no attributes; events are selected separately
+        w32(&mut body, 0);
         let mut b = Vec::with_capacity(32);
-        w8(&mut b, 1); // CreateWindow opcode (byte 0), depth follows in byte 1
+        w8(&mut b, 1);
         w8(&mut b, self.depth);
         w16(&mut b, words(body.len()));
         b.extend_from_slice(&body);
-        if env::var_os("SLX_X_DEBUG").is_some() {
-            eprintln!("CREATE_WINDOW root=0x{:x} visual=0x{:x} depth={} len={} bytes={}",
-                      self.root, self.visual, self.depth, b.len(), hex(&b));
+        if env::var_os("VIS_X_DEBUG").is_some() {
+            eprintln!(
+                "CREATE_WINDOW root=0x{:x} visual=0x{:x} depth={} len={} bytes={}",
+                self.root,
+                self.visual,
+                self.depth,
+                b.len(),
+                hex(&b)
+            );
         }
         self.send(&b)?;
         Ok(id)
     }
 
-    /// Select key/expose/structure events with ChangeWindowAttributes.
-    /// CWEventMask is bit 11 and takes exactly one CARD32 value word.
     pub fn select_events(&mut self, win: u32, event_mask: u32) -> Result<(), String> {
         let mut body = Vec::with_capacity(12);
         w32(&mut body, win);
-        w32(&mut body, 1 << 11); // CWEventMask
+        w32(&mut body, 1 << 11);
         w32(&mut body, event_mask);
         let mut b = Vec::with_capacity(16);
-        w8(&mut b, 2); // ChangeWindowAttributes
+        w8(&mut b, 2);
         w8(&mut b, 0);
         w16(&mut b, words(body.len()));
         b.extend_from_slice(&body);
@@ -323,12 +406,7 @@ impl X11 {
     }
 
     pub fn map_window(&mut self, id: u32) -> Result<(), String> {
-        let mut b = Vec::with_capacity(8);
-        w8(&mut b, 8); // MapWindow
-        w8(&mut b, 0);
-        w16(&mut b, words(4)); // xResourceReq: 8 bytes total
-        w32(&mut b, id);
-        self.send(&b)
+        self.resource_request(8, id)
     }
 
     pub fn create_gc(&mut self, drawable: u32) -> Result<u32, String> {
@@ -336,11 +414,11 @@ impl X11 {
         let mut body = Vec::with_capacity(20);
         w32(&mut body, id);
         w32(&mut body, drawable);
-        w32(&mut body, (1 << 2) | (1 << 3)); // GCForeground | GCBackground
+        w32(&mut body, (1 << 2) | (1 << 3));
         w32(&mut body, self.white);
         w32(&mut body, self.black);
         let mut b = Vec::with_capacity(24);
-        w8(&mut b, 55); // CreateGC
+        w8(&mut b, 55);
         w8(&mut b, 0);
         w16(&mut b, words(body.len()));
         b.extend_from_slice(&body);
@@ -348,32 +426,35 @@ impl X11 {
         Ok(id)
     }
 
-    /// Set the legacy WM_NAME property so Hyprland shows a useful title.
     pub fn set_title(&mut self, win: u32, title: &str) -> Result<(), String> {
-        // For format=8, nUnits counts 8-bit units (bytes), NOT words. The data
-        // itself is padded to a 4-byte boundary in the request body.
         let n_units = title.len() as u32;
         let mut data = title.as_bytes().to_vec();
         pad4(&mut data);
         let mut body = Vec::with_capacity(16 + data.len());
         w32(&mut body, win);
-        w32(&mut body, 39); // WM_NAME
-        w32(&mut body, 31); // STRING
-        w8(&mut body, 8); // format
+        w32(&mut body, 39);
+        w32(&mut body, 31);
+        w8(&mut body, 8);
         w8(&mut body, 0);
-        w16(&mut body, 0); // 3 pad bytes total
-        w32(&mut body, n_units); // nUnits for format=8 is the byte count
+        w16(&mut body, 0);
+        w32(&mut body, n_units);
         body.extend_from_slice(&data);
         let mut b = Vec::with_capacity(20 + data.len());
-        w8(&mut b, 18); // ChangeProperty
-        w8(&mut b, 0); // ReplaceMode
+        w8(&mut b, 18);
+        w8(&mut b, 0);
         w16(&mut b, words(body.len()));
         b.extend_from_slice(&body);
         self.send(&b)
     }
 
-    /// Upload a 0x00RRGGBB framebuffer as a ZPixmap, split into row chunks.
-    pub fn put_image(&mut self, win: u32, gc: u32, w: usize, h: usize, rgba: &[u32]) -> Result<(), String> {
+    pub fn put_image(
+        &mut self,
+        win: u32,
+        gc: u32,
+        w: usize,
+        h: usize,
+        rgba: &[u32],
+    ) -> Result<(), String> {
         let bytes_per_row = w * 4;
         let overhead = 24;
         let max_rows = (self.max_request.saturating_sub(overhead) / bytes_per_row).max(1);
@@ -383,9 +464,8 @@ impl X11 {
             let rows = (h - y).min(max_rows);
             let data_len = rows * bytes_per_row;
             let mut b = Vec::with_capacity(overhead + data_len);
-            w8(&mut b, 72); // PutImage
-            w8(&mut b, 2); // ZPixmap
-            // 20 bytes of fixed fields after the 4-byte header, then raster.
+            w8(&mut b, 72);
+            w8(&mut b, 2);
             w16(&mut b, words(20 + data_len));
             w32(&mut b, win);
             w32(&mut b, gc);
@@ -393,7 +473,7 @@ impl X11 {
             w16(&mut b, rows as u16);
             wi16(&mut b, 0);
             wi16(&mut b, y as i16);
-            w8(&mut b, 0); // left_pad
+            w8(&mut b, 0);
             w8(&mut b, self.depth);
             w16(&mut b, 0);
             for px in &rgba[y * w..(y + rows) * w] {
@@ -419,63 +499,72 @@ impl X11 {
         Ok(())
     }
 
-    /// Force delivery of any pending X errors with a round-trip GetInputFocus.
-    /// Without this, CreateWindow/PutImage failures are asynchronous and would
-    /// otherwise be silently swallowed by the event drain in `poll_key`.
-    pub fn check_errors(&mut self, label: &str) -> Result<(), String> {
-        let mut req = [0u8; 4];
-        req[0] = 43; // GetInputFocus (no arguments, 4-byte request)
-        req[2..4].copy_from_slice(&1u16.to_le_bytes());
-        self.send(&req)?;
-        loop {
-            let mut rec = [0u8; 32];
-            self.stream
-                .read_exact(&mut rec)
-                .map_err(|e| format!("{label}: X sync read: {e}"))?;
-            if rec[0] == 0 {
-                let resource = u32::from_le_bytes([rec[4], rec[5], rec[6], rec[7]]);
-                return Err(format!(
-                    "{label}: X error code {} seq {} resource 0x{:08x} minor {} major {} raw {}",
-                    rec[1],
-                    u16::from_le_bytes([rec[2], rec[3]]),
-                    resource,
-                    u16::from_le_bytes([rec[8], rec[9]]),
-                    rec[10],
-                    hex(&rec)
-                ));
-            }
-            if rec[0] == 1 {
-                return Ok(());
-            }
+    /// Return (width, height, map_state) from GetGeometry/GetWindowAttributes.
+    pub fn window_state(&mut self, win: u32) -> Result<(u16, u16, u8), String> {
+        self.resource_request(14, win)?;
+        let geo = self.read_reply("GetGeometry")?;
+        if geo[0] == 0 {
+            return Err(format!("GetGeometry error {}", geo[1]));
         }
+        let w = u16at(&geo, 16);
+        let h = u16at(&geo, 18);
+        self.resource_request(3, win)?;
+        let attr = self.read_reply("GetWindowAttributes")?;
+        if attr[0] == 0 {
+            return Err(format!("GetWindowAttributes error {}", attr[1]));
+        }
+        Ok((w, h, attr[26]))
     }
 
-    /// Drain pending events; returns true when a key was pressed (quit hint).
-    pub fn poll_key(&mut self) -> bool {
-        self.stream.set_nonblocking(true).ok();
-        let mut buf = [0u8; 4096];
-        let mut quit = false;
-        loop {
-            match self.stream.read(&mut buf) {
-                Ok(0) => break,
-                Ok(n) => self.pending.extend_from_slice(&buf[..n]),
-                Err(e) if e.kind() == io::ErrorKind::WouldBlock => break,
-                Err(_) => break,
-            }
+    pub fn check_errors(&mut self, label: &str) -> Result<(), String> {
+        let mut req = [0u8; 4];
+        req[0] = 43;
+        req[2..4].copy_from_slice(&1u16.to_le_bytes());
+        self.send(&req)?;
+        let reply = self.read_reply(label)?;
+        if reply[0] == 0 {
+            return Err(error_text(label, &reply));
         }
-        self.stream.set_nonblocking(false).ok();
-        while self.pending.len() >= 32 {
-            let ev: [u8; 32] = self.pending[..32].try_into().unwrap();
-            self.pending.drain(..32);
-            if ev[0] == 2 || ev[0] == 3 {
-                if env::var_os("SLX_X_DEBUG").is_some() {
-                    eprintln!("POLL_KEY quit on event type {} raw {}", ev[0], hex(&ev));
-                }
-                quit = true;
-            }
+        self.pump(false).ok();
+        if let Some(err) = self.errors.first() {
+            return Err(error_text(label, err));
         }
-        quit
+        self.errors.clear();
+        Ok(())
     }
+
+    pub fn poll_events(&mut self, win: u32) -> Events {
+        self.pump(false).ok();
+        self.errors.clear();
+        let mut out = Events::default();
+        let queued = std::mem::take(&mut self.events);
+        for ev in queued {
+            match ev[0] {
+                2 | 3 => out.key = true,
+                25 if ev.len() >= 24 && u32at(&ev, 8) == win => {
+                    let w = u16at(&ev, 20);
+                    let h = u16at(&ev, 22);
+                    if w > 0 && h > 0 {
+                        out.resized = Some((w, h));
+                    }
+                }
+                _ => {}
+            }
+        }
+        out
+    }
+}
+
+fn error_text(label: &str, rec: &[u8]) -> String {
+    format!(
+        "{label}: X error code {} seq {} resource 0x{:08x} minor {} major {} raw {}",
+        rec[1],
+        u16at(rec, 2),
+        u32at(rec, 4),
+        u16at(rec, 8),
+        rec[10],
+        hex(rec)
+    )
 }
 
 fn parse_display(s: &str) -> Result<(String, u32, usize), String> {
@@ -485,7 +574,11 @@ fn parse_display(s: &str) -> Result<(String, u32, usize), String> {
         _ => (s, 0),
     };
     let (host, num) = match host_num.rsplit_once(':') {
-        Some((h, n)) => (h.to_string(), n.parse::<u32>().map_err(|_| format!("bad display number in {s}"))?),
+        Some((h, n)) => (
+            h.to_string(),
+            n.parse::<u32>()
+                .map_err(|_| format!("bad display number in {s}"))?,
+        ),
         None => (String::new(), 0),
     };
     Ok((host, num, screen))

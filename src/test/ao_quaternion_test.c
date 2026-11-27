@@ -92,7 +92,6 @@ int main(int argc, char **argv)
 	ao_quaternion_init_vector(&position, 1, 1, 1);
 	ao_quaternion_init_vector(&position_expect, -1, -1, 1);
 
-	/* zero rotation */
 	ao_quaternion_init_zero_rotation(&rotation);
 
 #define dump() do {							\

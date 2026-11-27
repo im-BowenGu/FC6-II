@@ -316,10 +316,8 @@ ao_mmc5983_setup(void)
 {
 	uint8_t product_id;
 
-	/* Reboot the device */
 	ao_mmc5983_reboot();
 
-	/* Check product ID */
 	product_id = ao_mmc5983_reg_read(MMC5983_PRODUCT_ID);
 	if (product_id != MMC5983_PRODUCT_ID_PRODUCT_I2C &&
 	    product_id != MMC5983_PRODUCT_ID_PRODUCT_SPI)

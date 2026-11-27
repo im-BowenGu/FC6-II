@@ -606,7 +606,6 @@ ao_sdcard_write_block(uint32_t block, uint8_t *data)
 		start_block[1] = SDCARD_DATA_START_BLOCK;
 		ao_sdcard_send(start_block, 2);
 
-		/* Send the data */
 		ao_sdcard_send(data, 512);
 
 		/* Fake the CRC */

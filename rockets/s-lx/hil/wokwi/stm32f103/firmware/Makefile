@@ -1,6 +1,6 @@
 # Minimal Wokwi STM32F103 harness firmware. Links the real S-LX guidance core;
 # the sensor/servo layer is scenario-driven (Wokwi has no BMP280/ICM20689/
-# PCA9685 parts). Requires arm-none-eabi-gcc (e.g. nix-shell -p gcc-arm-embedded).
+# PCA9685 parts). Requires arm-none-eabi-gcc.
 ARM_GCC ?= arm-none-eabi-gcc
 ROOT := $(abspath ../../../../../..)
 PROFILE := $(ROOT)/rockets/s-lx

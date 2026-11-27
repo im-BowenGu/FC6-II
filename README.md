@@ -11,6 +11,26 @@ ASRC would like to thank Keith Packard for his help.
 
 
 ---
+Rocket tooling:
+
+	shared/cfd/      cross-rocket Taichi solver, force recorder and field stream
+	shared/physics/  cross-rocket MuJoCo attitude engine
+	shared/vis/rust/ cross-rocket Xwayland telemetry/CFD window
+
+	GNU Make pipeline (standard Linux):
+	  make -C rockets/s-lx ci
+	  make -C rockets/s-lx ci-live
+	  rockets/s-lx/ci/run-local.sh
+
+	Parallel Nix pipeline:
+	  nix develop
+	  nix run .#slx-ci
+	  nix run .#slx-ci-live
+	  nix run .#slx-vis
+
+	ci-live needs a Taichi/CUDA Python; set TAICHI_PYTHON and
+	TAICHI_LD_LIBRARY_PATH before running it or the local make target.
+
 Original Readme below:
 
 AltOS - 8051 operating system for Altus-Metrum projects

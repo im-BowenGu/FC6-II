@@ -134,13 +134,11 @@ ao_lcd_start(void)
 	ao_lcd_send_ins(0x6d);
 	ao_delay(AO_MS_TO_TICKS(200));
 
-	/* contrast set */
 	ao_lcd_contrast_set(0x18);
 
 	/* Display on */
 	ao_lcd_send_ins(0x08 | 0x04);
 
-	/* Clear */
 	ao_lcd_clear();
 }
 

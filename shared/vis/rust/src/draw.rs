@@ -1,4 +1,4 @@
-//! Tiny CPU rasteriser: solid shapes, scanline triangles and a 5x7 font.
+//! Small CPU rasteriser: solid shapes, scanline triangles and a 5x7 font.
 
 pub const fn rgb(r: u8, g: u8, b: u8) -> u32 {
     ((r as u32) << 16) | ((g as u32) << 8) | b as u32
@@ -12,7 +12,11 @@ pub struct Frame {
 
 impl Frame {
     pub fn new(w: usize, h: usize, bg: u32) -> Self {
-        Self { w, h, px: vec![bg; w * h] }
+        Self {
+            w,
+            h,
+            px: vec![bg; w * h],
+        }
     }
 
     pub fn clear(&mut self, c: u32) {
@@ -113,14 +117,7 @@ impl Frame {
         }
     }
 
-    /// Scanline fill of a flat-shaded triangle using integer edge functions.
-    pub fn tri(
-        &mut self,
-        a: (i64, i64),
-        b: (i64, i64),
-        c: (i64, i64),
-        color: u32,
-    ) {
+    pub fn tri(&mut self, a: (i64, i64), b: (i64, i64), c: (i64, i64), color: u32) {
         let area = edge(a.0, a.1, b.0, b.1, c.0, c.1);
         if area == 0 {
             self.line(a.0, a.1, b.0, b.1, color, 1);
@@ -180,6 +177,17 @@ fn edge(ax: i64, ay: i64, bx: i64, by: i64, px: i64, py: i64) -> i64 {
     (px - ax) * (by - ay) - (py - ay) * (bx - ax)
 }
 
+pub fn shade(base: u32, k: f64) -> u32 {
+    let r = ((base >> 16) & 0xff) as f64 * k;
+    let g = ((base >> 8) & 0xff) as f64 * k;
+    let b = (base & 0xff) as f64 * k;
+    rgb(
+        r.clamp(0.0, 255.0) as u8,
+        g.clamp(0.0, 255.0) as u8,
+        b.clamp(0.0, 255.0) as u8,
+    )
+}
+
 fn glyph(c: u8) -> [u8; 7] {
     match c {
         b' ' => [0, 0, 0, 0, 0, 0, 0],
@@ -234,15 +242,4 @@ fn glyph(c: u8) -> [u8; 7] {
         b'?' => [14, 17, 1, 2, 4, 0, 4],
         _ => [0, 0, 0, 0, 0, 0, 0],
     }
-}
-
-pub fn shade(base: u32, k: f64) -> u32 {
-    let r = ((base >> 16) & 0xff) as f64 * k;
-    let g = ((base >> 8) & 0xff) as f64 * k;
-    let b = (base & 0xff) as f64 * k;
-    rgb(
-        r.clamp(0.0, 255.0) as u8,
-        g.clamp(0.0, 255.0) as u8,
-        b.clamp(0.0, 255.0) as u8,
-    )
 }

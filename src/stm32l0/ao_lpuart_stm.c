@@ -240,7 +240,6 @@ ao_lpuart_enable(struct ao_stm_lpuart *lpuart, int hw_flow)
 	/* Pick a 9600 baud rate */
 	ao_lpuart_set_speed(lpuart, AO_SERIAL_SPEED_9600);
 
-	/* Enable the lpuart */
 	lpuart->reg->cr1 |= (1 << STM_LPUART_CR1_UE);
 }
 

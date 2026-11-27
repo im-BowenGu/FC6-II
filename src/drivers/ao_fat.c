@@ -717,7 +717,6 @@ _ao_fat_setup(void)
 		next_free = filesystem_full = 0;
 		fat32 = fsinfo_dirty = root_cluster = fsinfo_sector = free_count = 0;
 
-		/* Reset open file table */
 		memset(&ao_file_table, '\0', sizeof (ao_file_table));
 
 		ao_filesystem_status = _ao_fat_setup_partition();
@@ -864,7 +863,6 @@ _ao_fat_set_size(struct ao_file *file, uint32_t size)
 	}
 
 	DBG ("\tupdate directory size\n");
-	/* Update the directory entry */
 	dent = _ao_fat_root_get(file->dirent->entry);
 	if (!dent) {
 		printf ("dent update failed\n");
@@ -1171,7 +1169,6 @@ _ao_fat_creat(char name[11])
 					}
 
 					file = &ao_file_table[fd];
-					/* Initialize the dent */
 					_ao_fat_root_init(dent, name, AO_FAT_FILE_REGULAR);
 
 					/* Now initialize the dirent from the dent */

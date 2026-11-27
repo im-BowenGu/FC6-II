@@ -141,7 +141,6 @@ ao_serial_init(void)
 
 	PRR1 &= ~(1 << PRUSART1);
 
-	/* Pick a 9600 baud rate */
 	ao_serial_set_speed(AO_SERIAL_SPEED_9600);
 
 	UCSR1A = 0;
