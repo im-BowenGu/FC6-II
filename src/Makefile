@@ -65,6 +65,11 @@ ARMM0DIRS=\
 AVRDIRS=\
 	micropeak microkite microsplash
 
+# Additive rocket-profile target: only built when explicitly selected.
+ifeq ($(strip $(ROCKET)),ukroc-2027)
+ARMM3DIRS += ukroc-bluepill-f103 ukroc-bluepill-f103/flash-loader
+endif
+
 SUBDIRS=draw test
 
 ifeq ($(strip $(HAVE_ARM_M3_CC)),yes)

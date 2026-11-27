@@ -1,0 +1,36 @@
+# Movable-fin state table.
+#
+# Each state names the deflection of the four fins in the X-mix. Angles are
+# degrees, positive by the convention in the FluidX3D manifest. The `stl`
+# field is optional: either reference one STL per state, or generate one from
+# cad/fin_plate.stl by rotating about the hinge (see README.md).
+fin_plate: ../cad/fin_plate.stl
+hinge_axis: x=0, span along +y
+units: degrees
+states:
+  neutral:       {fin0:  0, fin1:  0, fin2:  0, fin3:  0, cfd: true}
+  pitch_p15:     {fin0: 15, fin1:  0, fin2: -15, fin3:  0, cfd: true}
+  pitch_n15:     {fin0: -15, fin1:  0, fin2: 15, fin3:  0, cfd: true}
+  yaw_p15:       {fin0:  0, fin1: 15, fin2:  0, fin3: -15, cfd: true}
+  yaw_n15:       {fin0:  0, fin1: -15, fin2:  0, fin3: 15, cfd: true}
+  roll_p15:      {fin0: 15, fin1: 15, fin2: 15, fin3: 15, cfd: true}
+  roll_n15:      {fin0: -15, fin1: -15, fin2: -15, fin3: -15, cfd: true}
+  xmix_p15:      {fin0: 15, fin1: -15, fin2: -15, fin3: 15, cfd: true}
+  # Frozen 4/8 deg reruns are validation rows, excluded from the aero fit:
+  # a 4 deg plate is smaller than one 5.38 mm voxel and is quantisation noise.
+  xmix_p4:       {fin0:  4, fin1: -4, fin2: -4, fin3:  4, cfd: true, fit: false}
+  xmix_p8:       {fin0:  8, fin1: -8, fin2: -8, fin3:  8, cfd: true, fit: false}
+  # Proposed intermediate sweep for the staged movable-boundary study.
+  pitch_p5:      {fin0:  5, fin1:  0, fin2: -5, fin3:  0, cfd: false}
+  pitch_p10:     {fin0: 10, fin1:  0, fin2: -10, fin3:  0, cfd: false}
+  yaw_p5:        {fin0:  0, fin1:  5, fin2:  0, fin3: -5, cfd: false}
+  yaw_p10:       {fin0:  0, fin1: 10, fin2:  0, fin3: -10, cfd: false}
+
+simulation:
+  domain: axis-aligned box around the rocket
+  precision: FP16S (FluidX3D D3Q19/SRT)
+  reference_speed_mps: 26.0
+  outputs: [force_N, torque_Nm, cd]
+  firmware_loop_hz: 100
+  motor_burn_s: 2.0
+  integration: same 100 Hz plant used by sim/run_dynamic_sim.py

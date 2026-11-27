@@ -23,9 +23,12 @@
 #include "ao_fat.h"
 #include "ao_bufio.h"
 
-/* Include FAT commands */
+/* Include FAT commands. A target may set FAT_COMMANDS=0 to omit the
+ * interactive command layer; existing builds keep the original default. */
+#ifndef FAT_COMMANDS
 #ifndef AO_FAT_TEST
 #define FAT_COMMANDS	1
+#endif
 #endif
 
 /* Spew FAT tracing */

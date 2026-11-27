@@ -1,0 +1,282 @@
+{
+  "neutral": {
+    "file": "fluidx3d/UKROC_2027_cfd.stl",
+    "main_fin_deflection_deg": {
+      "0": 0,
+      "90": 0,
+      "180": 0,
+      "270": 0
+    },
+    "main_fin_planform_m": {
+      "root_chord": 0.074,
+      "tip_chord": 0.05,
+      "span": 0.1,
+      "leading_edge_sweep": 0.025
+    },
+    "freeform_outline_m": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.03356228361014509,
+        0.016038613406618007
+      ],
+      [
+        0.1449415433783257,
+        0.01574160204723619
+      ],
+      [
+        0.17028651271224057,
+        0.0
+      ]
+    ],
+    "triangles": 576,
+    "hinge_x_m": 0.8380000000000001
+  },
+  "pitch_p15": {
+    "file": "fluidx3d/configs/pitch_p15.stl",
+    "main_fin_deflection_deg": {
+      "0": 15,
+      "90": 0,
+      "180": -15,
+      "270": 0
+    },
+    "main_fin_planform_m": {
+      "root_chord": 0.074,
+      "tip_chord": 0.05,
+      "span": 0.1,
+      "leading_edge_sweep": 0.025
+    },
+    "freeform_outline_m": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.03356228361014509,
+        0.016038613406618007
+      ],
+      [
+        0.1449415433783257,
+        0.01574160204723619
+      ],
+      [
+        0.17028651271224057,
+        0.0
+      ]
+    ],
+    "triangles": 576,
+    "hinge_x_m": 0.8380000000000001
+  },
+  "pitch_n15": {
+    "file": "fluidx3d/configs/pitch_n15.stl",
+    "main_fin_deflection_deg": {
+      "0": -15,
+      "90": 0,
+      "180": 15,
+      "270": 0
+    },
+    "main_fin_planform_m": {
+      "root_chord": 0.074,
+      "tip_chord": 0.05,
+      "span": 0.1,
+      "leading_edge_sweep": 0.025
+    },
+    "freeform_outline_m": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.03356228361014509,
+        0.016038613406618007
+      ],
+      [
+        0.1449415433783257,
+        0.01574160204723619
+      ],
+      [
+        0.17028651271224057,
+        0.0
+      ]
+    ],
+    "triangles": 576,
+    "hinge_x_m": 0.8380000000000001
+  },
+  "yaw_p15": {
+    "file": "fluidx3d/configs/yaw_p15.stl",
+    "main_fin_deflection_deg": {
+      "0": 0,
+      "90": 15,
+      "180": 0,
+      "270": -15
+    },
+    "main_fin_planform_m": {
+      "root_chord": 0.074,
+      "tip_chord": 0.05,
+      "span": 0.1,
+      "leading_edge_sweep": 0.025
+    },
+    "freeform_outline_m": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.03356228361014509,
+        0.016038613406618007
+      ],
+      [
+        0.1449415433783257,
+        0.01574160204723619
+      ],
+      [
+        0.17028651271224057,
+        0.0
+      ]
+    ],
+    "triangles": 576,
+    "hinge_x_m": 0.8380000000000001
+  },
+  "yaw_n15": {
+    "file": "fluidx3d/configs/yaw_n15.stl",
+    "main_fin_deflection_deg": {
+      "0": 0,
+      "90": -15,
+      "180": 0,
+      "270": 15
+    },
+    "main_fin_planform_m": {
+      "root_chord": 0.074,
+      "tip_chord": 0.05,
+      "span": 0.1,
+      "leading_edge_sweep": 0.025
+    },
+    "freeform_outline_m": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.03356228361014509,
+        0.016038613406618007
+      ],
+      [
+        0.1449415433783257,
+        0.01574160204723619
+      ],
+      [
+        0.17028651271224057,
+        0.0
+      ]
+    ],
+    "triangles": 576,
+    "hinge_x_m": 0.8380000000000001
+  },
+  "roll_p15": {
+    "file": "fluidx3d/configs/roll_p15.stl",
+    "main_fin_deflection_deg": {
+      "0": 15,
+      "90": 15,
+      "180": 15,
+      "270": 15
+    },
+    "main_fin_planform_m": {
+      "root_chord": 0.074,
+      "tip_chord": 0.05,
+      "span": 0.1,
+      "leading_edge_sweep": 0.025
+    },
+    "freeform_outline_m": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.03356228361014509,
+        0.016038613406618007
+      ],
+      [
+        0.1449415433783257,
+        0.01574160204723619
+      ],
+      [
+        0.17028651271224057,
+        0.0
+      ]
+    ],
+    "triangles": 576,
+    "hinge_x_m": 0.8380000000000001
+  },
+  "roll_n15": {
+    "file": "fluidx3d/configs/roll_n15.stl",
+    "main_fin_deflection_deg": {
+      "0": -15,
+      "90": -15,
+      "180": -15,
+      "270": -15
+    },
+    "main_fin_planform_m": {
+      "root_chord": 0.074,
+      "tip_chord": 0.05,
+      "span": 0.1,
+      "leading_edge_sweep": 0.025
+    },
+    "freeform_outline_m": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.03356228361014509,
+        0.016038613406618007
+      ],
+      [
+        0.1449415433783257,
+        0.01574160204723619
+      ],
+      [
+        0.17028651271224057,
+        0.0
+      ]
+    ],
+    "triangles": 576,
+    "hinge_x_m": 0.8380000000000001
+  },
+  "xmix_p15": {
+    "file": "fluidx3d/configs/xmix_p15.stl",
+    "main_fin_deflection_deg": {
+      "0": 15,
+      "90": -15,
+      "180": -15,
+      "270": 15
+    },
+    "main_fin_planform_m": {
+      "root_chord": 0.074,
+      "tip_chord": 0.05,
+      "span": 0.1,
+      "leading_edge_sweep": 0.025
+    },
+    "freeform_outline_m": [
+      [
+        0.0,
+        0.0
+      ],
+      [
+        0.03356228361014509,
+        0.016038613406618007
+      ],
+      [
+        0.1449415433783257,
+        0.01574160204723619
+      ],
+      [
+        0.17028651271224057,
+        0.0
+      ]
+    ],
+    "triangles": 576,
+    "hinge_x_m": 0.8380000000000001
+  }
+}

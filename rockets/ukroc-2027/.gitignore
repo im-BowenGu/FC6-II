@@ -1,0 +1,7 @@
+build/
+sim/dynamic_flight.csv
+sim/dynamic_summary.json
+sim/plots/
+sim/guided_motion.mp4
+__pycache__/
+*.pyc
