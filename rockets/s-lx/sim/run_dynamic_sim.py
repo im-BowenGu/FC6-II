@@ -40,6 +40,7 @@ import random
 import shutil
 import subprocess
 import sys
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -60,6 +61,9 @@ Q_REF = 0.5 * RHO_REF * U_REF ** 2
 CD0_CFD = 1.233524        # neutral final-step CFD Cd (20k steps)
 FIN_REF_DEG = 15.0
 TARGET_APOGEE_M = 229.0
+ROCKET_DIAMETER_M = 0.066        # tube OD, used as the rain intercept area
+RAIN_AREA_M2 = math.pi * (ROCKET_DIAMETER_M / 2.0) ** 2
+RAIN_DROP_SPEED_MPS = 6.0        # representative terminal fall speed
 
 # STM32 FC6-II tuned profile. The ESP32-C3 Rust guidance-core is unchanged and
 # keeps its original 2.0 deg / K_ALT 0.020 / K_APOGEE 0.300 tuning.
@@ -80,6 +84,10 @@ ACCEL_TILT_MIN_AZ = 0.5
 K_ALT, K_VEL, K_APOGEE = 0.010, 0.080, 0.200
 MAX_TILT_DEG = 4.0
 BURNOUT_T_S = 2.0
+# The F32 ejection charge has a 4 s delay. In the reference flight the latest
+# apogee is 6.61 s; this timer fallback only matters when an updraft keeps the
+# inertial vertical speed positive past apogee, so still-air cases are unchanged.
+EJECTION_T_S = 6.62
 APOGEE_DRAG_G = 1.55
 VV_BARO_BLEND = 0.05
 SERVO_TAU_S = 0.035        # PCA9685 50 Hz + small analogue servo lag
@@ -104,9 +112,13 @@ TILT_RECOVERY_HOLD_S = 0.20
 # saturates and costs drag. Once the airframe has left the near-vertical
 # corridor, centre the fins and let it weathervane into the flight path.
 COAST_WEATHERVANE_TILT_DEG = 3.0
+WEATHER_MODES = {"guided_wind5", "guided_gust", "guided_shear",
+                 "guided_updraft", "guided_downdraft", "guided_rain",
+                 "guided_storm", "guided_hot", "guided_cold"}
 CTRL_MODES = {"fixed", "guided", "guided_noise",
-              "fixed_tilt5", "guided_tilt5", "guided_tilt5_noise"}
-DYNAMIC_MODES = {"guided", "guided_noise", "guided_tilt5", "guided_tilt5_noise"}
+              "fixed_tilt5", "guided_tilt5", "guided_tilt5_noise"} | WEATHER_MODES
+DYNAMIC_MODES = {"guided", "guided_noise", "guided_tilt5",
+                 "guided_tilt5_noise"} | WEATHER_MODES
 
 
 def clamp(v: float, lo: float, hi: float) -> float:
@@ -164,6 +176,65 @@ class Series:
         i = bisect.bisect_right(self.t, t)
         f = (t - self.t[i - 1]) / (self.t[i] - self.t[i - 1])
         return self.v[i - 1] + f * (self.v[i] - self.v[i - 1])
+
+
+@dataclass(frozen=True)
+class WeatherState:
+    """Weather sampled at one 100 Hz plant tick."""
+
+    wind_e_mps: float
+    wind_n_mps: float
+    wind_up_mps: float
+    rho_scale: float
+    rain_mm_h: float
+
+
+@dataclass(frozen=True)
+class Weather:
+    """Deterministic adverse-conditions model for one simulated flight.
+
+    Wind is east/north, shear scales it linearly with altitude, and gust is a
+    sinusoidal east-west perturbation on top of the mean. A signed updraft is
+    smoothly ramped in over the first/last 50 m of its altitude band. Rain adds
+    droplet-impact drag; rho_scale scales the OpenRocket density history for
+    hot/cold air. The default is exact still air: zero wind, no rain, rho x1.
+    """
+
+    wind_e_mps: float = 0.0
+    wind_n_mps: float = 0.0
+    gust_mps: float = 0.0
+    gust_period_s: float = 8.0
+    shear_per_m: float = 0.0
+    vertical_mps: float = 0.0
+    draft_base_m: float = 20.0
+    draft_top_m: float = 400.0
+    rain_mm_h: float = 0.0
+    rho_scale: float = 1.0
+
+    def at(self, t: float, z: float) -> WeatherState:
+        shear = 1.0 + max(0.0, self.shear_per_m) * max(0.0, z)
+        gust = 0.0
+        if self.gust_mps and self.gust_period_s > 0.0:
+            gust = self.gust_mps * math.sin(2.0 * math.pi * t / self.gust_period_s)
+        if self.draft_top_m <= self.draft_base_m:
+            draft_factor = 1.0
+        else:
+            ramp_in = smoothstep((z - self.draft_base_m) / 50.0)
+            ramp_out = smoothstep((self.draft_top_m - z) / 50.0)
+            draft_factor = ramp_in * ramp_out
+        return WeatherState(
+            wind_e_mps=self.wind_e_mps * shear + gust,
+            wind_n_mps=self.wind_n_mps * shear,
+            wind_up_mps=self.vertical_mps * draft_factor,
+            rho_scale=self.rho_scale,
+            rain_mm_h=self.rain_mm_h,
+        )
+
+
+def smoothstep(x: float) -> float:
+    """Smooth 0-to-1 ramp used for updraft/downdraft altitude bands."""
+    x = clamp(x, 0.0, 1.0)
+    return x * x * (3.0 - 2.0 * x)
 
 
 def number(s: str) -> float:
@@ -450,7 +521,8 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
              noise: float = 0.0, seed: int = 7,
              initial_tilt_deg: float = 0.0,
              tilt_axis: str = "pitch",
-             wind_mps: float = 0.0) -> tuple[list[dict], dict]:
+             wind_mps: float = 0.0,
+             weather: Weather | None = None) -> tuple[list[dict], dict]:
     """Fly one mode. initial_tilt_deg is applied at rail exit (300 ms).
 
     The offset models a launcher rail or fin rigging error: the airframe is
@@ -458,12 +530,16 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
     estimator starts at zero (no absolute attitude reference at ignition), so
     recovery exercises the accel/gyro complement and the fin loop together.
 
-    wind_mps is a steady eastward horizontal wind speed. Drag and fin forces
-    use the air-relative velocity; with wind_mps == 0 (the default and all
-    existing cases) the plant is bit-for-bit identical to the original model.
+    wind_mps is a legacy steady eastward wind argument kept for callers; a
+    Weather instance takes precedence and adds gust/shear, a signed vertical
+    draft, rain-impact drag and air-density scaling. All forces use the
+    air-relative velocity. With no weather the plant is bit-for-bit identical
+    to the original still-air model.
     """
     dynamic = mode in DYNAMIC_MODES
     locked = mode == "neutral"
+    if weather is None:
+        weather = Weather(wind_e_mps=wind_mps)
     ctrl = Guidance(dynamic, noise, seed)
 
     z = vx = vy = vz = 0.0
@@ -495,7 +571,9 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
     recovery_t: float | None = None
     max_lateral = 0.0
 
-    t_end = or_data["Altitude"].t[-1] + 5.0
+    # Long enough for a strong updraft to deploy on the ejection timer and
+    # still reach the ground; normal flights break out at touchdown.
+    t_end = or_data["Altitude"].t[-1] + 40.0
     for step in range(int(t_end / DT) + 1):
         t = step * DT
         t_ms = t * 1000.0
@@ -520,8 +598,16 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
         mass = max(0.35, or_data["Mass"].at(t))
         thrust = or_data["Thrust"].at(t) if t < 6.0 else 0.0
         D0 = or_data["Drag_force"].at(t)
-        rho = max(0.5, or_data["Air_density"].at(t))
-        speed = math.sqrt(vx * vx + vy * vy + vz * vz)
+        wx_state = weather.at(t, z)
+        wx, wy, wu = wx_state.wind_e_mps, wx_state.wind_n_mps, wx_state.wind_up_mps
+        rho_scale = wx_state.rho_scale
+        rain_mm_h = wx_state.rain_mm_h
+        rho = max(0.5, or_data["Air_density"].at(t) * rho_scale)
+        # Air-relative velocity. With no weather ux/vy/uz equal the inertial
+        # velocity exactly, so the original still-air plant is unchanged.
+        ux, uy, uz = vx - wx, vy - wy, vz - wu
+        speed = math.sqrt(ux * ux + uy * uy + uz * uz)
+        speed_ground = math.sqrt(vx * vx + vy * vy + vz * vz)
 
         # Body axes (p = pitch tilt east, r = roll tilt north, psi = azimuth).
         bx = (math.sin(p), math.sin(r), math.cos(p) * math.cos(r))
@@ -589,11 +675,23 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
             # charge has deployed the parachute. Fit CdA to OR's terminal rate.
             drag = 0.5 * rho * speed * speed * CDA_PARA
         else:
-            drag = D0 * (aero["Cd0"] + dCd) / aero["Cd0"]
+            # The OpenRocket drag history is a still-air reference. Scale it to
+            # the current air-relative dynamic pressure; still air gives 1.0.
+            drag_scale = ((speed / speed_ground) ** 2
+                          if speed_ground > 1e-9 else 1.0)
+            drag = D0 * (aero["Cd0"] + dCd) / aero["Cd0"] * drag_scale
+        drag_vec = (0.0, 0.0, 0.0)
         if speed > 0.05:
-            drag_vec = tuple(-drag * c / speed for c in (vx, vy, vz))
-        else:
-            drag_vec = (0.0, 0.0, 0.0)
+            drag_vec = tuple(-drag * c / speed for c in (ux, uy, uz))
+        # Rain droplet impacts add momentum drag opposing the rocket's motion
+        # relative to the falling drops. Empirical LWC ~ 0.072 * R^0.88 g/m3.
+        lwc = 7.2e-5 * rain_mm_h ** 0.88 if rain_mm_h > 0.0 else 0.0
+        urx, ury, urz = ux, uy, uz + RAIN_DROP_SPEED_MPS
+        speed_rain = math.sqrt(urx * urx + ury * ury + urz * urz)
+        rain_drag = lwc * speed_rain * speed_rain * RAIN_AREA_M2
+        if rain_drag > 0.0 and speed_rain > 1e-9:
+            drag_vec = tuple(drag_vec[i] - rain_drag * c / speed_rain
+                             for i, c in enumerate((urx, ury, urz)))
 
         # CFD lateral force and moments, scaled to the current dynamic pressure.
         lin = aero["linear"]
@@ -617,20 +715,13 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
         vx_acc = (thrust_vec[0] + drag_vec[0] + lat_vec[0]) / mass
         vy_acc = (thrust_vec[1] + drag_vec[1] + lat_vec[1]) / mass
         vz_acc = (thrust_vec[2] + drag_vec[2] + lat_vec[2]) / mass - G
-        if wind_mps:
-            # Steady horizontal wind adds a lateral drag force taken from the
-            # reference drag history. The CFD lookup is frozen at zero wind,
-            # so its moments are deliberately not reinterpreted here: this
-            # scenario tests drift tolerance, not a new aerodynamic model.
-            vx_acc += (drag / mass) * math.copysign(
-                min(1.0, abs(wind_mps) / max(speed, 1.0)), wind_mps)
 
         # Static stability + aerodynamic damping, calibrated from OpenRocket's
         # 2.69 calibre margin at ~26 m/s (see AVIONICS.md / CFD README).
         # Aerodynamic restoring moment opposes angle of attack = body tilt
         # minus flight-path angle (NOT the reverse).
-        alpha_p = p - math.atan2(vx, vz) if vz > 1.0 else p
-        alpha_r = r - math.atan2(vy, vz) if vz > 1.0 else r
+        alpha_p = p - math.atan2(ux, uz) if uz > 1.0 else p
+        alpha_r = r - math.atan2(uy, uz) if uz > 1.0 else r
         k_static = 2.40 * q_ratio
         c_damp = 0.24 * q_ratio
         c_roll = 0.10 * q_ratio
@@ -663,7 +754,7 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
         x = or_data["Position_East_of_launch"].at(t) + vx_e * t
         y = or_data["Position_North_of_launch"].at(t) + vy_n * t
         max_z = max(max_z, z)
-        if not recovered and vz < 0.0 and z > 20.0:
+        if not recovered and ((vz < 0.0 and z > 20.0) or t >= EJECTION_T_S):
             recovered = True
 
         if ctrl.state == "GUIDED" and z < max_z - 3.0:
@@ -729,6 +820,10 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
             "accel_roll_deg": synth_roll_accel,
             "yaw_geom_deg": yaw_modal,
             "q_ratio": q_ratio, "dCd_cfd_raw": dCd_raw, "dCd_cfd": dCd,
+            "wind_e_mps": wx, "wind_n_mps": wy, "wind_up_mps": wu,
+            "rho_scale": rho_scale, "rho_kg_m3": rho,
+            "air_speed_mps": speed, "rain_mm_h": rain_mm_h,
+            "rain_lwc_kg_m3": lwc, "rain_drag_n": rain_drag,
             "M_pitch_cfd_raw_nm": raw_forces["Ty"],
             "drag_n": drag, "thrust_n": thrust, "mass_kg": mass, "state": ctrl.state,
             "M_pitch_nm": M_p, "M_yaw_nm": M_r, "M_roll_nm": M_roll,
@@ -746,7 +841,13 @@ def simulate(mode: str, or_data: dict[str, Series], aero: dict,
                "max_fin_deg": max(max(abs(r[f"fin{i}_deg"]) for i in range(4)) for r in rows),
                "final_state": last["state"],
                "initial_tilt_deg": initial_tilt_deg,
-               "wind_mps": wind_mps,
+               "wind_mps": math.hypot(weather.wind_e_mps, weather.wind_n_mps),
+               "weather": asdict(weather),
+               "wind_peak_mps": max(math.hypot(r["wind_e_mps"], r["wind_n_mps"])
+                                    for r in rows),
+               "draft_peak_mps": max(abs(r["wind_up_mps"]) for r in rows),
+               "rain_drag_peak_n": max(r["rain_drag_n"] for r in rows),
+               "max_air_speed_mps": max(r["air_speed_mps"] for r in rows),
                "tilt_axis": tilt_axis if initial_tilt_deg else "none",
                "rail_exit_t_s": tilt_t if tilt_applied else None,
                "peak_tilt_error_deg": peak_tilt_error,
@@ -948,9 +1049,10 @@ def check_summaries(summaries: dict[str, dict], aero: dict) -> None:
     """Fail the local CI run when the profile no longer meets its flight target.
 
     These are regression bounds on the coupled 100 Hz surrogate, not a claim
-    of flight qualification. The nominal target is 229 m +/- 5 m with a
-    34-37 s flight. Disturbances get a wider apogee band but must still show
-    closed-loop correction and unsaturated coast fins.
+    of flight qualification. Nominal cases stay inside 229 m +/- 5 m and
+    34-37 s. Adverse-weather cases get scenario-specific bands that reflect
+    the air-relative drag/static-stability model; all must end in a controlled
+    descent with centred coast fins.
     """
     errors: list[str] = []
 
@@ -959,19 +1061,32 @@ def check_summaries(summaries: dict[str, dict], aero: dict) -> None:
         if not lo <= value <= hi:
             errors.append(f"{mode}: apogee {value:.2f} m outside [{lo:.1f}, {hi:.1f}] m")
 
-    band("guided", TARGET_APOGEE_M - 5.0, TARGET_APOGEE_M + 5.0)
-    band("guided_noise", TARGET_APOGEE_M - 5.0, TARGET_APOGEE_M + 5.0)
-    band("guided_tilt5", TARGET_APOGEE_M - 5.0, TARGET_APOGEE_M + 5.0)
-    band("guided_wind5", TARGET_APOGEE_M - 10.0, TARGET_APOGEE_M + 10.0)
+    def duration(mode: str, lo: float, hi: float) -> None:
+        value = summaries[mode]["duration_s"]
+        if not lo <= value <= hi:
+            errors.append(f"{mode}: duration {value:.2f} s outside [{lo:.1f}, {hi:.1f}] s")
 
     for mode in ("guided", "guided_noise", "guided_tilt5"):
-        duration = summaries[mode]["duration_s"]
-        if not 34.0 <= duration <= 37.0:
-            errors.append(f"{mode}: duration {duration:.2f} s outside [34, 37] s")
-    # A steady 5 m/s wind changes the descent path; bound it more loosely.
-    wind_duration = summaries["guided_wind5"]["duration_s"]
-    if not 33.0 <= wind_duration <= 40.0:
-        errors.append(f"guided_wind5: duration {wind_duration:.2f} s outside [33, 40] s")
+        band(mode, TARGET_APOGEE_M - 5.0, TARGET_APOGEE_M + 5.0)
+        duration(mode, 34.0, 37.0)
+
+    # apogee low/high, duration low/high. Weathercocking in a 5 m/s crosswind
+    # costs significant altitude in the surrogate; the bands only catch a
+    # qualitative change in the adverse-condition response.
+    weather_bands = {
+        "guided_wind5": (120.0, 180.0, 20.0, 28.0),
+        "guided_gust": (70.0, 120.0, 12.0, 21.0),
+        "guided_shear": (120.0, 180.0, 20.0, 28.0),
+        "guided_updraft": (230.0, 255.0, 53.0, 60.0),
+        "guided_downdraft": (200.0, 240.0, 24.0, 31.0),
+        "guided_rain": (140.0, 190.0, 23.0, 31.0),
+        "guided_storm": (50.0, 100.0, 9.0, 16.0),
+        "guided_hot": (225.0, 240.0, 32.0, 36.0),
+        "guided_cold": (222.0, 238.0, 35.0, 39.0),
+    }
+    for mode, (a_lo, a_hi, d_lo, d_hi) in weather_bands.items():
+        band(mode, a_lo, a_hi)
+        duration(mode, d_lo, d_hi)
 
     gt = summaries["guided_tilt5"]
     if gt["tilt_error_at_burnout_deg"] is None:
@@ -982,8 +1097,33 @@ def check_summaries(summaries: dict[str, dict], aero: dict) -> None:
         errors.append("guided_tilt5: did not enter the 1 deg correction band within 1.5 s")
     if gt["coast_max_fin_deg"] > MAX_FIN_DEG:
         errors.append(f"guided_tilt5: coast fin {gt['coast_max_fin_deg']:.1f} deg saturated")
-    if summaries["guided_wind5"]["coast_max_fin_deg"] > MAX_FIN_DEG:
-        errors.append("guided_wind5: fins saturated in coast")
+
+    for mode in WEATHER_MODES:
+        s = summaries[mode]
+        if s["coast_max_fin_deg"] > MAX_FIN_DEG:
+            errors.append(f"{mode}: fins saturated in coast")
+        if s["final_state"] not in ("DESCENT", "LANDED"):
+            errors.append(f"{mode}: ended in {s['final_state']}, not a controlled descent")
+
+    # Prove each adverse condition was actually applied, not just renamed.
+    if summaries["guided_wind5"]["wind_peak_mps"] < 4.9:
+        errors.append("guided_wind5: steady wind was not applied")
+    if summaries["guided_gust"]["wind_peak_mps"] < 9.0:
+        errors.append("guided_gust: gust amplitude was not applied")
+    if summaries["guided_shear"]["wind_peak_mps"] < 8.0:
+        errors.append("guided_shear: altitude shear was not applied")
+    if summaries["guided_updraft"]["draft_peak_mps"] < 3.0:
+        errors.append("guided_updraft: positive draft was not applied")
+    if summaries["guided_downdraft"]["draft_peak_mps"] < 3.0:
+        errors.append("guided_downdraft: negative draft was not applied")
+    if summaries["guided_rain"]["rain_drag_peak_n"] <= 0.0:
+        errors.append("guided_rain: droplet drag was not applied")
+    if summaries["guided_storm"]["rain_drag_peak_n"] <= 0.0:
+        errors.append("guided_storm: droplet drag was not applied")
+    if not (0.85 <= summaries["guided_hot"]["weather"]["rho_scale"] < 1.0):
+        errors.append("guided_hot: reduced air density was not applied")
+    if not (1.0 < summaries["guided_cold"]["weather"]["rho_scale"] <= 1.15):
+        errors.append("guided_cold: increased air density was not applied")
 
     if aero["drag_rms"] > 0.05:
         errors.append(f"CFD drag fit RMS {aero['drag_rms']:.4f} > 0.05")
@@ -991,7 +1131,7 @@ def check_summaries(summaries: dict[str, dict], aero: dict) -> None:
     if errors:
         raise SystemExit("Local CI verification FAILED:\n  " + "\n  ".join(errors))
     print("Local CI verification PASSED: 229 +/- 5 m target, duration window, "
-          "5 deg offset recovery, wind and noise scenarios")
+          "5 deg offset recovery, noise and nine adverse-weather scenarios")
 
 
 # Simulation logging
@@ -1085,6 +1225,8 @@ def write_logs(runs: dict[str, list[dict]], summaries: dict[str, dict],
         "kd": aero["kd"], "cd0": aero["Cd0"], "drag_rms": aero["drag_rms"],
         "linear_aero_per_deg_at_qref": aero["linear"],
         "modes": list(runs),
+        "weather": {mode: summary["weather"]
+                    for mode, summary in summaries.items()},
     }, indent=2) + "\n")
     return outdir
 
@@ -1138,20 +1280,32 @@ def main() -> None:
     runs = {}
     summaries = {}
     cases = [
-        ("neutral", 0.0, 0.0, 0.0),
-        ("fixed", 0.0, 0.0, 0.0),
-        ("guided", 0.0, 0.0, 0.0),
-        ("guided_noise", 0.0, 0.35, 0.0),
-        ("fixed_tilt5", TILT_TEST_DEG, 0.0, 0.0),
-        ("guided_tilt5", TILT_TEST_DEG, 0.0, 0.0),
-        ("guided_tilt5_noise", TILT_TEST_DEG, 0.35, 0.0),
-        ("guided_wind5", 0.0, 0.0, 5.0),
+        ("neutral", 0.0, 0.0, Weather()),
+        ("fixed", 0.0, 0.0, Weather()),
+        ("guided", 0.0, 0.0, Weather()),
+        ("guided_noise", 0.0, 0.35, Weather()),
+        ("fixed_tilt5", TILT_TEST_DEG, 0.0, Weather()),
+        ("guided_tilt5", TILT_TEST_DEG, 0.0, Weather()),
+        ("guided_tilt5_noise", TILT_TEST_DEG, 0.35, Weather()),
+        ("guided_wind5", 0.0, 0.0, Weather(wind_e_mps=5.0)),
+        ("guided_gust", 0.0, 0.0, Weather(wind_e_mps=6.0, gust_mps=4.0,
+                                         gust_period_s=6.0)),
+        ("guided_shear", 0.0, 0.0, Weather(wind_e_mps=3.0, shear_per_m=0.020)),
+        ("guided_updraft", 0.0, 0.0, Weather(vertical_mps=3.5)),
+        ("guided_downdraft", 0.0, 0.0, Weather(vertical_mps=-3.5)),
+        ("guided_rain", 0.0, 0.0, Weather(rain_mm_h=100.0, wind_e_mps=3.0)),
+        ("guided_storm", 0.0, 0.0, Weather(
+            wind_e_mps=8.0, wind_n_mps=4.0, gust_mps=6.0, gust_period_s=5.0,
+            shear_per_m=0.008, vertical_mps=-2.5, rain_mm_h=80.0,
+            rho_scale=0.97)),
+        ("guided_hot", 0.0, 0.0, Weather(rho_scale=0.90)),
+        ("guided_cold", 0.0, 0.0, Weather(rho_scale=1.10)),
     ]
-    for mode, tilt_deg, noise_level, wind_mps in cases:
+    for mode, tilt_deg, noise_level, weather_case in cases:
         rows, summary = simulate(mode, or_data, aero,
                                  noise=noise_level, seed=11,
                                  initial_tilt_deg=tilt_deg,
-                                 wind_mps=wind_mps)
+                                 weather=weather_case)
         runs[mode] = rows
         summaries[mode] = summary
         rec = summary["tilt_recovery_s"]
@@ -1245,6 +1399,30 @@ def main() -> None:
             f"{gn['tilt_error_at_burnout_deg']:.2f} deg at burnout and band entry at "
             f"{rec_str(gn)}; the estimator starts at zero attitude at ignition, so "
             "recovery includes accel/gyro convergence, not just fin authority.",
+            "Adverse conditions use air-relative velocity for drag, dynamic "
+            "pressure and the static-stability angle of attack. With no weather "
+            "the plant is bit-for-bit identical to the still-air model; every "
+            "weather tick logs wind, draft, density scale and droplet drag.",
+            f"Weather suite: 5 m/s crosswind "
+            f"{summaries['guided_wind5']['apogee_m']:.2f} m / "
+            f"{summaries['guided_wind5']['duration_s']:.2f} s; "
+            f"6+/-4 m/s gust {summaries['guided_gust']['apogee_m']:.2f} m / "
+            f"{summaries['guided_gust']['duration_s']:.2f} s; "
+            f"0.020/m shear {summaries['guided_shear']['apogee_m']:.2f} m / "
+            f"{summaries['guided_shear']['duration_s']:.2f} s; "
+            f"+3.5 m/s updraft {summaries['guided_updraft']['apogee_m']:.2f} m / "
+            f"{summaries['guided_updraft']['duration_s']:.2f} s; "
+            f"-3.5 m/s downdraft {summaries['guided_downdraft']['apogee_m']:.2f} m / "
+            f"{summaries['guided_downdraft']['duration_s']:.2f} s; "
+            f"100 mm/h rain {summaries['guided_rain']['apogee_m']:.2f} m / "
+            f"{summaries['guided_rain']['duration_s']:.2f} s; combined storm "
+            f"{summaries['guided_storm']['apogee_m']:.2f} m / "
+            f"{summaries['guided_storm']['duration_s']:.2f} s.",
+            f"Density scaling brackets the target: rho x0.90 gives "
+            f"{summaries['guided_hot']['apogee_m']:.2f} m / "
+            f"{summaries['guided_hot']['duration_s']:.2f} s, rho x1.10 gives "
+            f"{summaries['guided_cold']['apogee_m']:.2f} m / "
+            f"{summaries['guided_cold']['duration_s']:.2f} s.",
             f"The recorded CFD lookup is evaluated every 10 ms ({1.0 / DT:.0f} Hz) "
             f"from the actual fin angles. Guidance commands wait "
             f"{SERVO_LATENCY_MS:.0f} ms before the 50 Hz PCA9685 latch, and each "
@@ -1280,6 +1458,12 @@ def main() -> None:
             "Fin-numbering / mixer cross-coupling still needs a physical check.",
             "The rail-exit tilt is a 5 deg attitude step at 300 ms with zero rate; "
             "real launcher tilt, fin rigging error and rail reaction loads are not modelled.",
+            "Wind, gust, shear and drafts are deterministic uniform-field approximations; "
+            "no turbulent gust spectrum, terrain boundary layer or moving-boundary CFD.",
+            "Rain is droplet-impact drag from an empirical liquid-water-content fit; "
+            "water ingestion, wet-surface aerodynamics and airframe mass uptake are not modelled.",
+            "Hot/cold cases apply a constant multiplier to the OpenRocket density history; "
+            "the motor thrust history is not re-corrected for air density.",
         ],
     }
     (HERE / "dynamic_summary.json").write_text(json.dumps(summary, indent=2) + "\n")

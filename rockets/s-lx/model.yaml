@@ -101,9 +101,15 @@ verification:
     - 5 deg rail-exit offset apogee within 229 +/- 5 m
     - 5 deg offset enters 1 deg band within 1.5 s
     - coast fins stay within +/- 15 deg
-    - 5 m/s wind apogee within 229 +/- 10 m and no fin saturation
+    - 5 m/s wind apogee within 120-180 m and no coast fin saturation
+    - gust, shear, updraft, downdraft, rain, storm and density cases within scenario-specific bands
+    - gust/shear wind magnitude, draft sign and rain drag confirm each condition was applied
+    - adverse cases end in a controlled descent with coast fins unsaturated
   limitations:
     - static force lookup, not moving-boundary CFD
     - fixed-fin OpenRocket drag/thrust history
     - servo lag, damping and stability are analytic approximations
     - no hardware-in-the-loop bench yet
+    - weather is a deterministic uniform field; no turbulence spectrum or terrain boundary layer
+    - rain is droplet-impact drag only; no water ingestion or airframe mass uptake
+    - hot/cold cases scale density but do not re-correct motor thrust

@@ -118,13 +118,29 @@ There is no GitHub Actions workflow and no PR gate. `ci/run-local.sh` runs
 offline by default and adds the live-CFD leg only when `RUN_LIVE_CFD=1` on a
 machine with Taichi and a CUDA GPU.
 
-The simulator check prints all eight modes and asserts:
+The simulator check prints **16 modes** (seven baseline/disturbance cases plus
+nine adverse-weather cases) and asserts:
 
-* nominal guided apogee **231.01 m / 35.45 s**, inside 229 ± 5 m and 34–37 s;
-* 0.35 sensor noise: 231.14 m / 35.47 s;
-* 5° rail-exit tilt: 228.51 m / 35.15 s, burnout error ≈0.97°, 1° band at
-  0.79 s, coast fin ≤8.9°;
-* steady 5 m/s wind: 232.22 m, no fin saturation.
+| Mode | Apogee | Duration | Check |
+| --- | --- | --- | --- |
+| `guided` | 231.01 m | 35.45 s | inside 229 ± 5 m and 34–37 s |
+| `guided_noise` | 231.14 m | 35.47 s | same target band with 0.35 sensor noise |
+| `guided_tilt5` | 228.51 m | 35.15 s | burnout error ≈0.97°, 1° band at 0.79 s, coast fin ≤8.9° |
+| `guided_wind5` | 142.07 m | 23.29 s | steady 5 m/s crosswind, coast fins centred |
+| `guided_gust` | 90.07 m | 15.45 s | 6 ± 4 m/s, 6 s period |
+| `guided_shear` | 147.67 m | 24.11 s | 3 m/s mean + 0.020/m altitude shear |
+| `guided_updraft` | 243.13 m | 56.06 s | +3.5 m/s, ejection-timer fallback at 6.62 s |
+| `guided_downdraft` | 220.81 m | 26.90 s | −3.5 m/s |
+| `guided_rain` | 162.92 m | 26.32 s | 100 mm/h plus 3 m/s wind |
+| `guided_storm` | 69.55 m | 11.33 s | gust + shear + downdraft + rain, ρ ×0.97 |
+| `guided_hot` / `guided_cold` | 231.80 / 230.24 m | 34.12 / 36.71 s | ρ ×0.90 / ×1.10 |
+
+Weather uses air-relative velocity for drag, dynamic pressure and the
+static-stability angle of attack; with no weather the plant is bit-for-bit the
+original still-air model. The wind cases deliberately show strong
+weathercocking in this surrogate, so their bounds are wider and are **not** a
+flight-envelope claim. Per-tick logs include wind components, draft, density
+scale and rain droplet drag; rain is impact drag only, not water ingestion.
 
 These are regression bounds on the coupled static-CFD/OpenRocket surrogate,
 **not** flight qualification.
